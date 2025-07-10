@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { validate } from "../services/auth";
-import { getAccessToken, getRefreshToken } from "../utils/cookies";
+import { clearTokens, getAccessToken, getRefreshToken } from "../utils/cookies";
 import { Box, CircularProgress } from "@mui/material";
 
 const ProtectedRoute: React.FC = () => {
@@ -13,6 +13,7 @@ const ProtectedRoute: React.FC = () => {
     if (accessToken && refreshToken) {
       setAuth(true);
     } else {
+      clearTokens();
       validate(
         () => setAuth(true),
         () => setAuth(false),
