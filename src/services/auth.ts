@@ -61,4 +61,11 @@ export const login = (username: string, password: string) =>
     return res;
   });
 
+export const validate = (callback: () => void, onError: () => void) => {
+  axios
+    .get(backendURL + "token/validate")
+    .then(() => callback())
+    .catch(() => onError());
+};
+
 export default api;
