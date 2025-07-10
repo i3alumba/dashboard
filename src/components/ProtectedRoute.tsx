@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router-dom";
 import { validate } from "../services/auth";
 import { getAccessToken, getRefreshToken } from "../utils/cookies";
-import { CircularProgress } from "@mui/material";
+import { Box, CircularProgress } from "@mui/material";
 
 const ProtectedRoute: React.FC = () => {
   const [auth, setAuth] = useState<boolean | null>(null);
@@ -22,9 +22,23 @@ const ProtectedRoute: React.FC = () => {
 
   return (
     <>
-      {auth == null && <CircularProgress />}
-      {auth && <Outlet />}
-      {!auth && <Navigate to="/login" replace />}
+      {auth == null && (
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: "100vh",
+            width: "100vw",
+          }}
+        >
+          <CircularProgress
+            sx={{ width: "10vw !important", height: "10vw !important" }}
+          />
+        </Box>
+      )}
+      {auth == true && <Outlet />}
+      {auth == false && <Navigate to="/login" replace />}
     </>
   );
 };
