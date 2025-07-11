@@ -22,7 +22,6 @@ const Home: React.FC = () => {
       try {
         const response = await api.get("/user/");
         const groups = response.data[0].groups;
-        console.log(groups);
         setGroups(groups);
       } catch (err) {
         if (err instanceof Error) {
@@ -78,7 +77,12 @@ const Home: React.FC = () => {
         {groups.map((group, idx) => {
           const color = colorPalette[idx % colorPalette.length];
           return (
-            <Button key={group.id} variant="contained" color={color}>
+            <Button
+              key={group.id}
+              variant="contained"
+              color={color}
+              href={"http://" + group.name.toLowerCase() + ".i3alumba.ru"}
+            >
               {group.name}
             </Button>
           );
