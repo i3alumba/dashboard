@@ -81,7 +81,7 @@ const Home: React.FC = () => {
               key={group.id}
               variant="contained"
               color={color}
-              href={"http://" + group.name.toLowerCase() + ".i3alumba.ru"}
+              href={"https://" + group.name.toLowerCase() + ".i3alumba.ru"}
             >
               {group.name}
             </Button>
