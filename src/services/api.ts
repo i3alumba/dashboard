@@ -6,7 +6,7 @@ import {
   clearTokens,
 } from "../utils/cookies";
 
-export const backendURL = "http://auth.i3alumba.ru/api/";
+export const backendURL = "https://auth.i3alumba.ru/api/";
 
 const api = axios.create({
   baseURL: backendURL,
