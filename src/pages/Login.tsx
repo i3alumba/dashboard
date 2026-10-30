@@ -26,7 +26,8 @@ const Login: React.FC = () => {
       flexDirection="column"
       alignItems="center"
       justifyContent="center"
-      height="100vh"
+      flex={1}
+      p={3}
       gap={2}
     >
       <Typography variant="h4">Login</Typography>

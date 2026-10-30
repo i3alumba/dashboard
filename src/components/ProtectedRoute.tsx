@@ -29,8 +29,8 @@ const ProtectedRoute: React.FC = () => {
             display: "flex",
             justifyContent: "center",
             alignItems: "center",
-            height: "100vh",
-            width: "100vw",
+            flex: 1,
+            width: "100%",
           }}
         >
           <CircularProgress
