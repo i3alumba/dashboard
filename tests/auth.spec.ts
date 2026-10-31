@@ -45,6 +45,7 @@ test("login establishes the central session with CSRF and only shows granted ser
           services: {
             gitlab: { enabled: true, url: "https://gitlab.i3alumba.ru" },
             drive: { enabled: false, url: "https://drive.i3alumba.ru" },
+            monitor: { enabled: false, url: "https://monitor.i3alumba.ru" },
           },
         },
       });
@@ -62,6 +63,9 @@ test("login establishes the central session with CSRF and only shows granted ser
   ).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Drive", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("link", { name: "Resource Monitor", exact: true }),
   ).toHaveCount(0);
   expect(logins).toBe(1);
   expect(legacyLogins).toBe(0);

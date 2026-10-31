@@ -8,7 +8,11 @@ the page obtains a JWT pair only through the protected session bridge. Tokens
 never appear in redirect URLs. Legacy JWT API clients remain supported.
 
 The portal uses `/api/access/` and displays only explicitly enabled services,
-not URLs inferred from group names. Rotated refresh tokens are persisted and
+not URLs inferred from group names. Resource Monitor at
+`https://monitor.i3alumba.ru` appears only for exact `services.monitor.enabled=true`
+from Auth: active staff administrators, independently of native service groups.
+The monitor itself revalidates access server-side on every data request; hiding
+this card is not an authorization boundary. Rotated refresh tokens are persisted and
 concurrent expired requests share one refresh. Logout ends the Auth browser
 session and revokes the current owned refresh token, then clears local JWT
 cookies. Existing sessions in GitLab, Matrix, Jenkins and MinIO are not globally
