@@ -12,9 +12,7 @@ const api = axios.create({
   baseURL: backendURL,
   headers: {
     "Content-Type": "application/json",
-    // "Access-Control-Allow-Origin": "http://auth.i3alumba.ru",
   },
-  // withCredentials: true,
 });
 
 // Attach access token to every request
@@ -26,27 +24,38 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// On 401, try refresh
+// Share one refresh across concurrent requests: rotated refresh tokens are single-use.
+let pendingRefresh: Promise<string> | null = null;
+function refreshAccessToken(): Promise<string> {
+  if (!pendingRefresh) {
+    pendingRefresh = (async () => {
+      const refresh = getRefreshToken();
+      if (!refresh) throw new Error("Refresh token required");
+      const { data } = await axios.post(backendURL + "token/refresh/", {
+        refresh,
+      });
+      if (typeof data.access !== "string")
+        throw new Error("Invalid token response");
+      setTokens(data.access, data.refresh ?? refresh);
+      return data.access as string;
+    })().finally(() => {
+      pendingRefresh = null;
+    });
+  }
+  return pendingRefresh;
+}
+
 api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const original = err.config;
-    if (err.response?.status === 401 && !original._retry) {
+    if (err.response?.status === 401 && original && !original._retry) {
       original._retry = true;
-      const refresh = getRefreshToken();
-      if (refresh) {
-        try {
-          const { data } = await axios.post(backendURL + "token/refresh/", {
-            refresh,
-          });
-          setTokens(data.access, refresh);
-          original.headers.Authorization = `Bearer ${data.access}`;
-          return api(original);
-        } catch {
-          clearTokens();
-          window.location.href = "/login";
-        }
-      } else {
+      try {
+        const access = await refreshAccessToken();
+        original.headers.Authorization = `Bearer ${access}`;
+        return api(original);
+      } catch {
         clearTokens();
         window.location.href = "/login";
       }

@@ -1,45 +1,65 @@
 import React, { useEffect, useState } from "react";
 import { Box, Typography, Button, CircularProgress } from "@mui/material";
-import { clearTokens } from "../utils/cookies";
+import { logout } from "../services/auth";
 import api from "../services/api";
 
-interface Group {
-  id: number;
-  name: string;
+interface Service {
+  slug: string;
+  url: string;
 }
+
+const serviceLabels: Record<string, string> = {
+  drive: "Drive",
+  matrix: "Matrix",
+  gitlab: "GitLab",
+  minio: "MinIO",
+  jenkins: "Jenkins",
+};
 
 const colorPalette: Array<
   "primary" | "secondary" | "error" | "warning" | "info" | "success"
 > = ["primary", "secondary", "error", "warning", "info", "success"];
 
 const Home: React.FC = () => {
-  const [groups, setGroups] = useState<Group[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchGroups = async () => {
+    const fetchServices = async () => {
       try {
-        const response = await api.get("/user/");
-        const groups = response.data[0].groups;
-        setGroups(groups);
+        const { data } = await api.get<{
+          services: Record<string, { enabled: boolean; url: string }>;
+        }>("/access/");
+        setServices(
+          Object.entries(data.services)
+            .filter(
+              ([slug, service]) =>
+                slug in serviceLabels && service.enabled === true,
+            )
+            .map(([slug, service]) => ({ slug, url: service.url })),
+        );
       } catch (err) {
         if (err instanceof Error) {
           setError(err.name);
         } else {
-          setError("Failed to load groups");
+          setError("Failed to load services");
         }
       } finally {
         setLoading(false);
       }
     };
 
-    fetchGroups();
+    void fetchServices();
   }, []);
 
-  const handleLogout = () => {
-    clearTokens();
-    window.location.reload();
+  const handleLogout = async () => {
+    try {
+      await logout();
+      window.location.assign("/login");
+    } catch {
+      setError("Could not end the central session. Please retry logout.");
+    }
   };
 
   if (loading) {
@@ -66,19 +86,19 @@ const Home: React.FC = () => {
   return (
     <Box p={4} display="flex" flexDirection="column" alignItems="start" gap={2}>
       <Typography variant="h3" gutterBottom>
-        Your Groups
+        Your Services
       </Typography>
       <Box display="flex" flexWrap="wrap" gap={2} mb={4}>
-        {groups.map((group, idx) => {
+        {services.map((service, idx) => {
           const color = colorPalette[idx % colorPalette.length];
           return (
             <Button
-              key={group.id}
+              key={service.slug}
               variant="contained"
               color={color}
-              href={"https://" + group.name.toLowerCase() + ".i3alumba.ru"}
+              href={service.url}
             >
-              {group.name}
+              {serviceLabels[service.slug]}
             </Button>
           );
         })}
