@@ -14,6 +14,7 @@ const serviceLabels: Record<string, string> = {
   gitlab: "GitLab",
   minio: "MinIO",
   jenkins: "Jenkins",
+  monitor: "Resource Monitor",
 };
 
 const colorPalette: Array<
