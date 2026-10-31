@@ -1,5 +1,22 @@
 # React + TypeScript + Vite
 
+## Central Auth session
+
+Sign-in uses Auth's CSRF-protected Django session endpoints with credentials
+included. An existing Auth session opens Dashboard without another password;
+the page obtains a JWT pair only through the protected session bridge. Tokens
+never appear in redirect URLs. Legacy JWT API clients remain supported.
+
+The portal uses `/api/access/` and displays only explicitly enabled services,
+not URLs inferred from group names. Rotated refresh tokens are persisted and
+concurrent expired requests share one refresh. Logout ends the Auth browser
+session and revokes the current owned refresh token, then clears local JWT
+cookies. Existing sessions in GitLab, Matrix, Jenkins and MinIO are not globally
+terminated; this is SSO, not back-channel single logout.
+
+`npm run test:theme` runs both theme and mocked session/CSRF/refresh regression
+tests. No production credentials or services are used.
+
 ## Color theme
 
 Use the sun/moon button in the Dashboard header to switch between light and dark

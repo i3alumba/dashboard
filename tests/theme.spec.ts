@@ -15,9 +15,20 @@ async function expectTheme(page: Page, mode: "light" | "dark") {
 
 test.beforeEach(async ({ context }) => {
   // No real authentication server or user credentials are used.
-  await context.route("https://auth.i3alumba.ru/api/**", (route) =>
-    route.fulfill({ json: [{ groups: [{ id: 1, name: "Drive" }] }] }),
-  );
+  await context.route("https://auth.i3alumba.ru/api/**", (route) => {
+    if (new URL(route.request().url()).pathname === "/api/session/") {
+      return route.fulfill({
+        json: { authenticated: false, csrfToken: "fixture-csrf" },
+      });
+    }
+    return route.fulfill({
+      json: {
+        services: {
+          drive: { enabled: true, url: "https://drive.i3alumba.ru" },
+        },
+      },
+    });
+  });
 });
 
 for (const mode of ["light", "dark"] as const) {
@@ -98,7 +109,7 @@ test("the authenticated dashboard also uses the theme", async ({
   ]);
   await page.goto("/");
   await expect(
-    page.getByRole("heading", { name: "Your Groups" }),
+    page.getByRole("heading", { name: "Your Services" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Switch to dark theme" }).click();
   await expectTheme(page, "dark");
