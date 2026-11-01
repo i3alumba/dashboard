@@ -21,6 +21,16 @@ terminated; this is SSO, not back-channel single logout.
 `npm run test:theme` runs both theme and mocked session/CSRF/refresh regression
 tests. No production credentials or services are used.
 
+## Service tiles
+
+Enabled services appear as large, fully clickable links with distinct decorative
+icons: one column on mobile, two on tablets and three on desktop (six services
+form two desktop rows). Tiles gently lift on hover and keyboard focus, with a
+clear focus outline in both themes. Reduced-motion preferences disable movement
+and transitions while preserving the static focus indicator. Auth grants, labels
+and destination URLs are unchanged. Mocked browser tests cover all six tiles,
+responsive layout, keyboard navigation, hover and reduced motion.
+
 ## Color theme
 
 Use the sun/moon button in the Dashboard header to switch between light and dark
