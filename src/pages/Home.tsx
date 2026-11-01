@@ -4,9 +4,14 @@ import {
   Typography,
   Button,
   CircularProgress,
-  Card,
-  CardContent,
+  ButtonBase,
 } from "@mui/material";
+import FolderIcon from "@mui/icons-material/Folder";
+import ChatIcon from "@mui/icons-material/Chat";
+import CodeIcon from "@mui/icons-material/Code";
+import StorageIcon from "@mui/icons-material/Storage";
+import BuildIcon from "@mui/icons-material/Build";
+import AnalyticsIcon from "@mui/icons-material/Analytics";
 import { logout } from "../services/auth";
 import api from "../services/api";
 
@@ -22,6 +27,15 @@ const serviceLabels: Record<string, string> = {
   minio: "MinIO",
   jenkins: "Jenkins",
   monitor: "Resource Monitor",
+};
+
+const serviceIcons: Record<string, typeof FolderIcon> = {
+  drive: FolderIcon,
+  matrix: ChatIcon,
+  gitlab: CodeIcon,
+  minio: StorageIcon,
+  jenkins: BuildIcon,
+  monitor: AnalyticsIcon,
 };
 
 const Home: React.FC = () => {
@@ -109,15 +123,53 @@ const Home: React.FC = () => {
         mb={2}
         width="100%"
       >
-        {services.map((service) => (
-          <Card key={service.slug}>
-            <CardContent sx={{ p: 3 }}>
-              <Button variant="outlined" href={service.url} fullWidth>
+        {services.map((service) => {
+          const Icon = serviceIcons[service.slug];
+          return (
+            <ButtonBase
+              key={service.slug}
+              component="a"
+              href={service.url}
+              disableRipple
+              sx={{
+                minHeight: 150,
+                p: 3,
+                display: "flex",
+                flexDirection: "column",
+                gap: 2,
+                border: "1px solid",
+                borderColor: "divider",
+                borderRadius: 3,
+                bgcolor: "background.paper",
+                color: "text.primary",
+                transition:
+                  "transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease",
+                "&:hover, &.Mui-focusVisible": {
+                  transform: "translateY(-5px)",
+                  borderColor: "primary.main",
+                  boxShadow: 3,
+                },
+                "&.Mui-focusVisible": {
+                  outline: "2px solid",
+                  outlineColor: "primary.main",
+                  outlineOffset: 3,
+                },
+                "@media (prefers-reduced-motion: reduce)": {
+                  transition: "none",
+                  "&, &:hover, &.Mui-focusVisible": { transform: "none" },
+                },
+              }}
+            >
+              <Icon
+                aria-hidden="true"
+                sx={{ fontSize: 40, color: "primary.main" }}
+              />
+              <Typography component="span" variant="h6">
                 {serviceLabels[service.slug]}
-              </Button>
-            </CardContent>
-          </Card>
-        ))}
+              </Typography>
+            </ButtonBase>
+          );
+        })}
       </Box>
       <Button variant="outlined" onClick={handleLogout}>
         Logout
