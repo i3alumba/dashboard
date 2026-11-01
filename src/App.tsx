@@ -17,6 +17,7 @@ import { MODE_STORAGE_KEY, createThemeStorageManager } from "./ui/themeStorage";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
+import Containers from "./pages/Containers";
 
 const storageManager = createThemeStorageManager("dashboard-color-mode");
 
@@ -66,6 +67,7 @@ const App: React.FC = () => (
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<Home />} />
+              <Route path="/containers" element={<Containers />} />
             </Route>
           </Routes>
         </BrowserRouter>
