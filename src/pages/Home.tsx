@@ -14,6 +14,8 @@ import BuildIcon from "@mui/icons-material/Build";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import { logout } from "../services/auth";
 import api from "../services/api";
+import { Link as RouterLink } from "react-router-dom";
+import { useContainers } from "../containers/useContainers";
 
 interface Service {
   slug: string;
@@ -39,6 +41,7 @@ const serviceIcons: Record<string, typeof FolderIcon> = {
 };
 
 const Home: React.FC = () => {
+  const containers = useContainers();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -171,6 +174,11 @@ const Home: React.FC = () => {
           );
         })}
       </Box>
+      {containers.capabilities && (
+        <Button component={RouterLink} to="/containers" variant="outlined">
+          Manage Ubuntu containers
+        </Button>
+      )}
       <Button variant="outlined" onClick={handleLogout}>
         Logout
       </Button>

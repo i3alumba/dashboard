@@ -125,3 +125,35 @@ export default tseslint.config([
   },
 ]);
 ```
+
+## Ubuntu container administrator UI (unreleased)
+
+`/containers` uses the existing JWT client against same-origin `/api/containers/`.
+The entry and inventory require exact live backend administrator capabilities;
+missing/malformed grants and authorization loss clear the panel. Capabilities are
+rechecked on focus, refresh and every five seconds. Backend routing/publication
+is separate work; nothing has been released or deployed by this UI change.
+
+The server enforces the live administrator role on every request, CPU/RAM limits,
+a single valid DNS label under `hosting.i3alumba.ru`, and atomic port inspection/reservation.
+The Subdomain input defaults to `mc`, yielding `mc.hosting.i3alumba.ru`.
+Wildcard/exact DNS records must be DNS-only for arbitrary TCP/UDP; this UI does
+not create/change them. Other suffixes, nested labels and URLs are rejected. Browser checks are only
+advisory, not reservations or authorization. Free/reserved/published allocation
+and service reachability are distinct; unknown host inspection is never free.
+Guests are plain Ubuntu with persistent full root and separate `/home` on SSD,
+without disk quota; shared disk exhaustion remains an operator risk. Passwords
+are write-only, masked, cleared on submission, and never persisted by this UI.
+Only owned port removal is offered, not guest deletion or recreation.
+
+SSH suggests `3001 → 22`, within the operator-confirmed **3000–50000** forwarded
+range. Infrastructure and NodePort30000–32767 remain excluded; every new port
+still needs actual host/NAT inspection and atomic server reservation. A suggestion
+is never a grant. Alpha's old2222 remains GitLab SSH, outside this allocation pool.
+Guest target ports may include22. Root passwords
+must be 16–256 characters without CR/LF/NUL/colon and are never returned.
+
+Capabilities explicitly declare `external_ingress_ready`. False means upstream
+router/NAT forwarding is not configured: show an operator warning and disable
+public-port creation/addition, while preserving inventory/removal/power controls.
+Free host sockets alone cannot prove that a port is routed from the internet.
