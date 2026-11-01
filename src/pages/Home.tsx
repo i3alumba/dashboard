@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { Box, Typography, Button, CircularProgress } from "@mui/material";
+import {
+  Box,
+  Typography,
+  Button,
+  CircularProgress,
+  Card,
+  CardContent,
+} from "@mui/material";
 import { logout } from "../services/auth";
 import api from "../services/api";
 
@@ -16,10 +23,6 @@ const serviceLabels: Record<string, string> = {
   jenkins: "Jenkins",
   monitor: "Resource Monitor",
 };
-
-const colorPalette: Array<
-  "primary" | "secondary" | "error" | "warning" | "info" | "success"
-> = ["primary", "secondary", "error", "warning", "info", "success"];
 
 const Home: React.FC = () => {
   const [services, setServices] = useState<Service[]>([]);
@@ -85,24 +88,36 @@ const Home: React.FC = () => {
   }
 
   return (
-    <Box p={4} display="flex" flexDirection="column" alignItems="start" gap={2}>
-      <Typography variant="h3" gutterBottom>
+    <Box
+      display="flex"
+      flexDirection="column"
+      alignItems="start"
+      gap={2}
+      width="100%"
+    >
+      <Typography variant="h5" gutterBottom>
         Your Services
       </Typography>
-      <Box display="flex" flexWrap="wrap" gap={2} mb={4}>
-        {services.map((service, idx) => {
-          const color = colorPalette[idx % colorPalette.length];
-          return (
-            <Button
-              key={service.slug}
-              variant="contained"
-              color={color}
-              href={service.url}
-            >
-              {serviceLabels[service.slug]}
-            </Button>
-          );
-        })}
+      <Box
+        display="grid"
+        gridTemplateColumns={{
+          xs: "1fr",
+          sm: "repeat(2, minmax(0, 1fr))",
+          md: "repeat(3, minmax(0, 1fr))",
+        }}
+        gap={2}
+        mb={2}
+        width="100%"
+      >
+        {services.map((service) => (
+          <Card key={service.slug}>
+            <CardContent sx={{ p: 3 }}>
+              <Button variant="outlined" href={service.url} fullWidth>
+                {serviceLabels[service.slug]}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </Box>
       <Button variant="outlined" onClick={handleLogout}>
         Logout
