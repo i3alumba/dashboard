@@ -25,10 +25,14 @@ tests. No production credentials or services are used.
 
 Use the sun/moon button in the Dashboard header to switch between light and dark
 mode. It is available on the login screen as well as authenticated pages.
-Initially the theme follows the operating system. An explicit selection is saved
-in this browser under `dashboard-color-mode` and synchronized between open tabs.
-Drive has its own independent preference. If browser storage is disabled, the
-switch still works for the current page, but the choice cannot survive a reload.
+Initially the theme follows the operating system. An explicit selection is shared
+with i3alumba services using the non-sensitive `i3alumba-theme` cookie (on
+`i3alumba.ru`, Secure on HTTPS, SameSite=Lax). The shared cookie takes priority
+over same-origin `i3alumba-color-mode` storage; an existing `dashboard-color-mode`
+preference migrates when no shared choice exists. Open tabs synchronize through
+storage events and sibling domains through one-second cookie polling and focus.
+If cookies or storage are blocked, available storage or memory keeps the switch
+usable. Authentication cookies and session behavior are unchanged.
 
 ### Theme regression tests
 

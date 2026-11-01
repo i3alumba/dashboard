@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Alert, Box, TextField, Button, Typography } from "@mui/material";
+import {
+  Alert,
+  Box,
+  TextField,
+  Button,
+  Typography,
+  Paper,
+} from "@mui/material";
 import { login, restoreSession } from "../services/auth";
 
 const Login: React.FC = () => {
@@ -34,35 +41,49 @@ const Login: React.FC = () => {
   };
 
   return (
-    <Box
-      component="form"
-      onSubmit={handleSubmit}
-      display="flex"
-      flexDirection="column"
-      alignItems="center"
-      justifyContent="center"
-      flex={1}
-      p={3}
-      gap={2}
-    >
-      <Typography variant="h4">Login</Typography>
-      {error && <Alert severity="error">{error}</Alert>}
-      <TextField
-        label="Username"
-        value={username}
-        onChange={(e) => setUsername(e.target.value)}
-        required
-      />
-      <TextField
-        label="Password"
-        type="password"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        required
-      />
-      <Button type="submit" variant="contained" disabled={checking}>
-        Sign In
-      </Button>
+    <Box sx={{ flex: 1, display: "grid", placeItems: "center" }}>
+      <Paper variant="outlined" sx={{ width: "100%", maxWidth: 420 }}>
+        <Box
+          component="form"
+          onSubmit={handleSubmit}
+          display="flex"
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          p={{ xs: 3, sm: 4 }}
+          gap={2}
+        >
+          <Typography variant="h5" component="h2">
+            Login
+          </Typography>
+          {error && <Alert severity="error">{error}</Alert>}
+          <TextField
+            fullWidth
+            autoComplete="username"
+            label="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            required
+          />
+          <TextField
+            fullWidth
+            autoComplete="current-password"
+            label="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <Button
+            fullWidth
+            type="submit"
+            variant="contained"
+            disabled={checking}
+          >
+            Sign In
+          </Button>
+        </Box>
+      </Paper>
     </Box>
   );
 };
