@@ -827,6 +827,9 @@ test("password-manager input enables a valid creation draft without storing the 
   await expect(
     page.getByRole("button", { name: "Create container", exact: true }),
   ).toBeEnabled();
+  await expect(
+    page.locator("label").filter({ hasText: "Initial root password" }),
+  ).toHaveAttribute("data-shrink", "true");
   expect(
     await page.evaluate(() =>
       JSON.stringify({ ...localStorage, ...sessionStorage }),
