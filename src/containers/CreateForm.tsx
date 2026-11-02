@@ -31,7 +31,13 @@ export default function CreateForm({
   const [memory, setMemory] = useState(1);
   const [ports, setPorts] = useState<PortSpec[]>([initialPort()]);
   const [passwordValid, setPasswordValid] = useState(false);
+  const [passwordPresent, setPasswordPresent] = useState(false);
   const password = useRef<HTMLInputElement>(null);
+  const syncPasswordValidity = (value: string) => {
+    // Keep only validation booleans in React state, never the secret itself.
+    setPasswordValid(validPassword(value));
+    setPasswordPresent(value.length > 0);
+  };
   const duplicate = ports.some((port, i) =>
     ports.some(
       (other, j) =>
@@ -40,28 +46,46 @@ export default function CreateForm({
         port.public_port === other.public_port,
     ),
   );
-  const valid =
-    /^[a-z][a-z0-9-]{0,31}$/.test(name) &&
-    validSubdomain(subdomain) &&
-    Number.isInteger(cpu) &&
-    cpu >= 1 &&
-    cpu <= caps.max_cpu &&
-    memory > 0 &&
-    memory <= caps.max_memory_gb &&
-    ports.every(validPort) &&
-    !duplicate &&
-    (caps.external_ingress_ready || ports.length === 0) &&
-    passwordValid;
+  const nameValid = /^[a-z][a-z0-9-]{0,31}$/.test(name);
+  const validationErrors = [
+    !nameValid &&
+      "Name must start with a lowercase letter and contain only lowercase letters, digits or hyphens (max 32).",
+    !validSubdomain(subdomain) &&
+      "Subdomain must be one lowercase DNS label, without dots or leading/trailing hyphens.",
+    !(Number.isInteger(cpu) && cpu >= 1 && cpu <= caps.max_cpu) &&
+      `CPU cores must be an integer from 1 to ${caps.max_cpu}.`,
+    !(memory > 0 && memory <= caps.max_memory_gb) &&
+      `Memory must be greater than zero and at most ${caps.max_memory_gb} GB.`,
+    !ports.every(validPort) &&
+      "Each port needs a public port from 3000 to 50000 and a guest target from 1 to 65535.",
+    duplicate && "Remove duplicate public port/protocol entries.",
+    !(caps.external_ingress_ready || ports.length === 0) &&
+      "Public ingress is not configured; remove public ports or contact the operator.",
+    !passwordValid &&
+      "Root password must contain 16–256 characters without CR, LF, NUL or colon.",
+  ].filter(Boolean);
+  const valid = validationErrors.length === 0;
   return (
     <Paper
       component="form"
       autoComplete="off"
+      onInputCapture={() => {
+        if (password.current) syncPasswordValidity(password.current.value);
+      }}
+      onFocusCapture={() => {
+        if (password.current) syncPasswordValidity(password.current.value);
+      }}
       onSubmit={async (e) => {
         e.preventDefault();
         if (!valid || pending || !password.current) return;
         const root_password = password.current.value;
+        // Recheck the DOM value: autofill can change an uncontrolled input.
+        if (!validPassword(root_password)) {
+          syncPasswordValidity(root_password);
+          return;
+        }
         password.current.value = "";
-        setPasswordValid(false);
+        syncPasswordValidity("");
         if (
           await create({
             name,
@@ -86,6 +110,7 @@ export default function CreateForm({
         </Typography>
         <TextField
           label="Name"
+          error={name.length > 0 && !nameValid}
           value={name}
           disabled={pending}
           helperText="Lowercase letter first; lowercase letters, digits, hyphens; max 32."
@@ -125,8 +150,15 @@ export default function CreateForm({
           inputRef={password}
           disabled={pending}
           autoComplete="new-password"
+          error={passwordPresent && !passwordValid}
           helperText="16–256 characters; no CR, LF, NUL or colon. Write-only; cleared immediately on submit."
-          onChange={(e) => setPasswordValid(validPassword(e.target.value))}
+          onChange={(e) => syncPasswordValidity(e.target.value)}
+          onInput={() => {
+            if (password.current) syncPasswordValidity(password.current.value);
+          }}
+          onBlur={() => {
+            if (password.current) syncPasswordValidity(password.current.value);
+          }}
         />
         <Typography variant="body2">
           Forwarded public range: 3000–50000, excluding infrastructure and
@@ -149,6 +181,16 @@ export default function CreateForm({
         {duplicate && (
           <Typography color="error">
             Duplicate public port/protocol in this draft.
+          </Typography>
+        )}
+        {!valid && (
+          <Typography
+            role="status"
+            aria-label="Create form validation"
+            color="text.secondary"
+            variant="body2"
+          >
+            To enable creation: {validationErrors.join(" ")}
           </Typography>
         )}
         <Button type="submit" variant="contained" disabled={pending || !valid}>

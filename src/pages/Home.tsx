@@ -12,10 +12,9 @@ import CodeIcon from "@mui/icons-material/Code";
 import StorageIcon from "@mui/icons-material/Storage";
 import BuildIcon from "@mui/icons-material/Build";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
+import DnsIcon from "@mui/icons-material/Dns";
 import { logout } from "../services/auth";
 import api from "../services/api";
-import { Link as RouterLink } from "react-router-dom";
-import { useContainers } from "../containers/useContainers";
 
 interface Service {
   slug: string;
@@ -29,6 +28,7 @@ const serviceLabels: Record<string, string> = {
   minio: "MinIO",
   jenkins: "Jenkins",
   monitor: "Resource Monitor",
+  hosting: "Ubuntu Hosting",
 };
 
 const serviceIcons: Record<string, typeof FolderIcon> = {
@@ -38,10 +38,10 @@ const serviceIcons: Record<string, typeof FolderIcon> = {
   minio: StorageIcon,
   jenkins: BuildIcon,
   monitor: AnalyticsIcon,
+  hosting: DnsIcon,
 };
 
 const Home: React.FC = () => {
-  const containers = useContainers();
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -174,11 +174,6 @@ const Home: React.FC = () => {
           );
         })}
       </Box>
-      {containers.capabilities && (
-        <Button component={RouterLink} to="/containers" variant="outlined">
-          Manage Ubuntu containers
-        </Button>
-      )}
       <Button variant="outlined" onClick={handleLogout}>
         Logout
       </Button>
