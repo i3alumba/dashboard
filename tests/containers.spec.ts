@@ -47,31 +47,41 @@ const free = {
 };
 const secret = "write-only-fixture-password";
 type Handler = (route: Route, path: string) => Promise<boolean | void>;
-async function setup(page: Page, handler?: Handler) {
+async function setup(
+  page: Page,
+  handler?: Handler,
+  origin = "http://127.0.0.1:4173",
+  hostingGrant: unknown = true,
+) {
+  const scope = origin.startsWith("https:")
+    ? { domain: ".i3alumba.ru", path: "/", secure: true }
+    : { url: origin };
   await page.context().addCookies([
-    {
-      name: "access_token",
-      value: "fixture-access",
-      url: "http://127.0.0.1:4173",
-    },
-    {
-      name: "refresh_token",
-      value: "fixture-refresh",
-      url: "http://127.0.0.1:4173",
-    },
+    { name: "access_token", value: "fixture-access", ...scope },
+    { name: "refresh_token", value: "fixture-refresh", ...scope },
   ]);
   await page.route("https://auth.i3alumba.ru/api/**", async (route) => {
     const headers = {
-      "access-control-allow-origin": "http://127.0.0.1:4173",
+      "access-control-allow-origin": origin,
       "access-control-allow-headers": "authorization,content-type",
       "access-control-allow-methods": "GET,POST,OPTIONS",
     };
     if (route.request().method() === "OPTIONS")
       return route.fulfill({ status: 204, headers });
-    return route.fulfill({ headers, json: { services: {} } });
+    return route.fulfill({
+      headers,
+      json: {
+        services: {
+          hosting: {
+            enabled: hostingGrant,
+            url: "https://hosting.i3alumba.ru",
+          },
+        },
+      },
+    });
   });
   await page.route("**/api/containers/**", async (route) => {
-    expect(new URL(route.request().url()).origin).toBe("http://127.0.0.1:4173");
+    expect(new URL(route.request().url()).origin).toBe(origin);
     expect(["Bearer fixture-access", "Bearer refreshed-access"]).toContain(
       route.request().headers().authorization,
     );
@@ -97,12 +107,16 @@ async function draft(page: Page) {
     .waitFor();
 }
 
-test("admin entry uses exact backend capabilities, not Auth services", async ({
+test("hosting entry is a normal service grid tile and backend still protects inventory", async ({
   page,
 }) => {
   await setup(page);
   await page.goto("/");
-  await page.getByRole("link", { name: "Manage Ubuntu containers" }).click();
+  const tile = page.getByRole("link", { name: "Ubuntu Hosting", exact: true });
+  await expect(tile).toHaveAttribute("href", "https://hosting.i3alumba.ru");
+  await expect(tile.locator("..")).toHaveCSS("display", "grid");
+  await expect(tile).toHaveCSS("min-height", "150px");
+  await page.goto("/containers");
   await expect(
     page.getByRole("article", { name: "Container ubuntu-one" }),
   ).toBeVisible();
@@ -115,7 +129,7 @@ test("admin entry uses exact backend capabilities, not Auth services", async ({
   await expect(page.getByRole("button", { name: /delete/i })).toHaveCount(0);
 });
 for (const flag of [false, "true", 1, null]) {
-  test(`malformed/nonadmin grant ${JSON.stringify(flag)} hides entry and inventory`, async ({
+  test(`malformed/nonadmin capability ${JSON.stringify(flag)} denies inventory independently of the portal card`, async ({
     page,
   }) => {
     let lists = 0;
@@ -131,8 +145,8 @@ for (const flag of [false, "true", 1, null]) {
       page.getByRole("heading", { name: "Your Services" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Manage Ubuntu containers" }),
-    ).toHaveCount(0);
+      page.getByRole("link", { name: "Ubuntu Hosting", exact: true }),
+    ).toBeVisible();
     await page.goto("/containers");
     await expect(page.getByRole("alert")).toContainText(
       "Administrator access unavailable",
@@ -142,7 +156,7 @@ for (const flag of [false, "true", 1, null]) {
   });
 }
 for (const status of [403, 404, 503]) {
-  test(`capabilities ${status} fail closed on home and direct route`, async ({
+  test(`capabilities ${status} fail closed on the direct route without changing portal grants`, async ({
     page,
   }) => {
     await setup(page, async (route, path) => {
@@ -157,8 +171,8 @@ for (const status of [403, 404, 503]) {
       page.getByRole("heading", { name: "Your Services" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", { name: "Manage Ubuntu containers" }),
-    ).toHaveCount(0);
+      page.getByRole("link", { name: "Ubuntu Hosting", exact: true }),
+    ).toBeVisible();
     await page.goto("/containers");
     await expect(page.getByRole("alert")).toContainText(
       "Administrator access unavailable",
@@ -754,4 +768,68 @@ test("late pre-mutation inventory cannot overwrite a newer power state", async (
   release?.();
   await expect(page.getByText(/State: stopped/)).toBeVisible();
   expect(reads).toBe(3);
+});
+
+test("disabled creation explains invalid name and password without reflecting the secret", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/containers");
+  await page.getByLabel("Name", { exact: true }).fill("Invalid Name");
+  await page.getByLabel("Initial root password").fill("short");
+  const status = page.getByRole("status", { name: "Create form validation" });
+  await expect(status).toContainText("Name must start with a lowercase letter");
+  await expect(status).toContainText("Root password must contain 16–256");
+  await expect(
+    page.getByRole("button", { name: "Create container", exact: true }),
+  ).toBeDisabled();
+  await expect(status).not.toContainText("short");
+});
+
+test("submission rechecks a silently changed DOM password despite a stale valid flag", async ({
+  page,
+}) => {
+  let creates = 0;
+  await setup(page, async (route, path) => {
+    if (path === "" && route.request().method() === "POST") creates++;
+  });
+  await page.goto("/containers");
+  await draft(page);
+  await expect(
+    page.getByRole("button", { name: "Create container", exact: true }),
+  ).toBeEnabled();
+  await page.getByLabel("Initial root password").evaluate((input) => {
+    (input as HTMLInputElement).value = "short";
+    input
+      .closest("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+  });
+  await expect(
+    page.getByRole("button", { name: "Create container", exact: true }),
+  ).toBeDisabled();
+  expect(creates).toBe(0);
+  await expect(
+    page.getByRole("status", { name: "Create form validation" }),
+  ).toContainText("Root password must contain 16–256");
+});
+
+test("password-manager input enables a valid creation draft without storing the password", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/containers");
+  await page.getByLabel("Name", { exact: true }).fill("new-ubuntu");
+  await page.getByLabel("Initial root password").evaluate((input, value) => {
+    const element = input as HTMLInputElement;
+    element.value = value;
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+  }, secret);
+  await expect(
+    page.getByRole("button", { name: "Create container", exact: true }),
+  ).toBeEnabled();
+  expect(
+    await page.evaluate(() =>
+      JSON.stringify({ ...localStorage, ...sessionStorage }),
+    ),
+  ).not.toContain(secret);
 });

@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@mui/material/styles";
 import {
   AppBar,
@@ -18,7 +18,10 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Containers from "./pages/Containers";
+import HostingRedirect from "./pages/HostingRedirect";
 
+const hostingOrigin = window.location.hostname === "hosting.i3alumba.ru";
+const portalOrigin = window.location.hostname === "main.i3alumba.ru";
 const storageManager = createThemeStorageManager("dashboard-color-mode");
 
 const App: React.FC = () => (
@@ -43,7 +46,7 @@ const App: React.FC = () => (
               i3alumba
             </Link>
             <Typography component="h1" variant="h6" sx={{ flexGrow: 1 }}>
-              Dashboard
+              {hostingOrigin ? "Ubuntu Hosting" : "Dashboard"}
             </Typography>
             <ThemeToggle />
           </Toolbar>
@@ -66,8 +69,22 @@ const App: React.FC = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute />}>
-              <Route path="/" element={<Home />} />
-              <Route path="/containers" element={<Containers />} />
+              <Route
+                path="/"
+                element={hostingOrigin ? <Containers /> : <Home />}
+              />
+              <Route
+                path="/containers"
+                element={
+                  hostingOrigin ? (
+                    <Navigate to="/" replace />
+                  ) : portalOrigin ? (
+                    <HostingRedirect />
+                  ) : (
+                    <Containers />
+                  )
+                }
+              />
             </Route>
           </Routes>
         </BrowserRouter>

@@ -5,7 +5,6 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { Link } from "react-router-dom";
 import CreateForm from "../containers/CreateForm";
 import InstanceCard from "../containers/InstanceCard";
 import { parseCheck, parseInstance } from "../containers/api";
@@ -47,7 +46,11 @@ export default function Containers() {
   };
   return (
     <Stack gap={3} sx={{ width: "100%", minWidth: 0 }}>
-      <Button component={Link} to="/" sx={{ alignSelf: "start" }}>
+      <Button
+        component="a"
+        href="https://main.i3alumba.ru/"
+        sx={{ alignSelf: "start" }}
+      >
         Back to Dashboard
       </Button>
       <Typography variant="h5" component="h1">
