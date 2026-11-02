@@ -12,8 +12,13 @@ not URLs inferred from group names. Resource Monitor at
 `https://monitor.i3alumba.ru` appears only for exact `services.monitor.enabled=true`
 from Auth: active staff administrators, independently of native service groups.
 The monitor itself revalidates access server-side on every data request; hiding
-this card is not an authorization boundary. Rotated refresh tokens are persisted and
-concurrent expired requests share one refresh. Logout ends the Auth browser
+this card is not an authorization boundary.
+Ubuntu Hosting at `https://hosting.i3alumba.ru` follows exact
+`services.hosting.enabled=true` in the same Auth response and appears in the
+same service-tile grid, not as a separate control. The hosting API still checks
+live active/staff eligibility on every request; a visible tile is not authority.
+Rotated refresh tokens are persisted and concurrent expired requests share one
+refresh. Logout ends the Auth browser
 session and revokes the current owned refresh token, then clears local JWT
 cookies. Existing sessions in GitLab, Matrix, Jenkins and MinIO are not globally
 terminated; this is SSO, not back-channel single logout.
@@ -126,13 +131,21 @@ export default tseslint.config([
 ]);
 ```
 
-## Ubuntu container administrator UI (unreleased)
+## Ubuntu Hosting administrator UI
 
-`/containers` uses the existing JWT client against same-origin `/api/containers/`.
-The entry and inventory require exact live backend administrator capabilities;
-missing/malformed grants and authorization loss clear the panel. Capabilities are
-rechecked on focus, refresh and every five seconds. Backend routing/publication
-is separate work; nothing has been released or deployed by this UI change.
+The prepared standalone origin is `https://hosting.i3alumba.ru/`, with the existing
+JWT client using same-origin `/api/containers/`. The same frontend bundle/service
+renders the hosting panel at that origin and the portal grid at `main.i3alumba.ru`.
+The old portal `/containers` path redirects to the fixed Hosting root, dropping
+query strings rather than forwarding credentials. `/containers` remains a local
+development/test route; Hosting canonicalizes it to `/`.
+
+The portal entry follows the exact live Auth `services.hosting.enabled` grant;
+inventory and mutations independently require exact backend capabilities and
+server-side bearer authorization. Missing/malformed grants and authorization loss
+clear the panel. Capabilities refresh on focus and every five seconds.
+The migration requires reviewed Host-specific Ingress and Auth's exact Hosting
+CORS/CSRF origin, not wildcard guest origins. Source preparation is not deployment.
 
 The server enforces the live administrator role on every request, CPU/RAM limits,
 a single valid DNS label under `hosting.i3alumba.ru`, and atomic port inspection/reservation.
@@ -144,6 +157,10 @@ and service reachability are distinct; unknown host inspection is never free.
 Guests are plain Ubuntu with persistent full root and separate `/home` on SSD,
 without disk quota; shared disk exhaustion remains an operator risk. Passwords
 are write-only, masked, cleared on submission, and never persisted by this UI.
+Password-manager `input`/focus/blur events synchronize validation booleans without
+putting plaintext passwords into React state. The current DOM value is rechecked
+at submit. A disabled Create button lists the invalid constraints instead of
+silently treating a filled but invalid field as complete.
 Only owned port removal is offered, not guest deletion or recreation.
 
 SSH suggests `3001 → 22`, within the operator-confirmed **3000–50000** forwarded
