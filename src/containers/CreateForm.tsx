@@ -148,6 +148,7 @@ export default function CreateForm({
           label="Initial root password"
           type="password"
           inputRef={password}
+          slotProps={{ inputLabel: { shrink: passwordPresent || undefined } }}
           disabled={pending}
           autoComplete="new-password"
           error={passwordPresent && !passwordValid}
