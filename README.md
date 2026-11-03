@@ -15,8 +15,10 @@ The monitor itself revalidates access server-side on every data request; hiding
 this card is not an authorization boundary.
 Ubuntu Hosting at `https://hosting.i3alumba.ru` follows exact
 `services.hosting.enabled=true` in the same Auth response and appears in the
-same service-tile grid, not as a separate control. The hosting API still checks
-live active/staff eligibility on every request; a visible tile is not authority.
+same service-tile grid, not as a separate control. The prepared hosting API checks
+live active status and exact `services.hosting` on every request; a visible tile
+is not authority. Before Hosting readiness, Auth retains legacy staff-derived
+eligibility. Deploy and verify the consumer before enabling independent grants.
 Rotated refresh tokens are persisted and concurrent expired requests share one
 refresh. Logout ends the Auth browser
 session and revokes the current owned refresh token, then clears local JWT
@@ -130,6 +132,53 @@ export default tseslint.config([
   },
 ]);
 ```
+
+## User administration (disabled source preparation)
+
+The same bundle renders `https://users.i3alumba.ru/` and the portal's normal
+User administration card. Active global administrators are checked by Auth on
+every API call; the page uses same-origin `/api/user-admin/`. The central API
+release switch defaults off. No native worker or credentials are included.
+
+The provisioning-first MVP distinguishes requested access, preparing/bound setup,
+configured accounts with unconfirmed session guarantees, and deferred revocation.
+It explicitly warns that removing access or deactivating denies new Auth sign-ins
+but may leave external credentials working. Re-enable requiring operator attention
+is never shown as successful. The worker's narrower scope does not clear activation
+gates; the UI contains no execution bypass.
+
+The matrix has one `is_admin` column, per-service grants, create, profile editing
+(email/first/last name), confirmation for role/deactivation changes, and native
+status. Owned GitLab/Matrix/MinIO targets also expose explicit pause/resume
+handoff. Confirmations keep their opening authority epoch across polling, not a
+profile ETag. Resume is disabled for running/unknown reservations and another
+administrator's pause; safe manual changes are conditional on the pause staying
+in effect. Authority loss closes these dialogs too. No force/retry or Jenkins
+management action exists. Username/native IDs are not renamed; users are never deleted. Profile
+edits retain their opening ETag across polling and reject concurrent updates.
+Loss of authority clears the table and any open profile/confirmation dialog;
+late responses cannot restore them. Create passwords remain DOM-only and are
+cleared at submit. Jenkins is hard-readonly and never managed. Hosting stays
+readonly until the prepared server-side consumer contract is deployed and verified.
+The administrator-only MinIO scope note records the operator-approved option 1:
+blocking newly managed accounts denies S3 access, not native STS/Console-session
+issuance. It never claims full login revocation or adoption of existing accounts;
+the note disappears with all user data on loss of authority.
+The separate Matrix note records its independently accepted native lock semantics:
+password login/sync are denied while refresh may rotate tokens that remain denied;
+sessions and keys are preserved. This is not permanent revocation or worker activation.
+The GitLab note distinguishes cookie identity introspection from private data
+access and explicitly retains the browser/OIDC acceptance gate. Auth's separate
+worker source defaults to preview and all profiles remain activation-blocked;
+Dashboard contains no native credentials.
+
+`npm run test:theme` includes isolated Users API mocks, profile conflicts,
+authority loss, SSO restoration, native handoff epoch/reservation checks and mobile
+matrix scrolling. The complete latest mocked Chromium suite passed 98 tests. No production
+requests are made. Security fixes are locked within the existing dependency
+ranges; production dependency audit reports zero advisories. The development
+ESLint dependency tree still has 12 moderate minimatch advisories; fixing that
+requires a separate compatible lint-tooling migration, not `npm audit --force`.
 
 ## Ubuntu Hosting administrator UI
 
