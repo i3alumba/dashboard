@@ -9,6 +9,7 @@ import {
   Typography,
   Link,
   Container,
+  CircularProgress,
 } from "@mui/material";
 import ThemeToggle from "./components/ThemeToggle";
 import { theme } from "./ui/sharedTheme";
@@ -19,6 +20,16 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 import Containers from "./pages/Containers";
 import HostingRedirect from "./pages/HostingRedirect";
+
+const Users = React.lazy(() => import("./pages/Users"));
+const usersOrigin = window.location.hostname === "users.i3alumba.ru";
+const usersPage = (
+  <React.Suspense
+    fallback={<CircularProgress aria-label="Loading user administration" />}
+  >
+    <Users />
+  </React.Suspense>
+);
 
 const hostingOrigin = window.location.hostname === "hosting.i3alumba.ru";
 const portalOrigin = window.location.hostname === "main.i3alumba.ru";
@@ -46,7 +57,11 @@ const App: React.FC = () => (
               i3alumba
             </Link>
             <Typography component="h1" variant="h6" sx={{ flexGrow: 1 }}>
-              {hostingOrigin ? "Ubuntu Hosting" : "Dashboard"}
+              {usersOrigin
+                ? "User administration"
+                : hostingOrigin
+                  ? "Ubuntu Hosting"
+                  : "Dashboard"}
             </Typography>
             <ThemeToggle />
           </Toolbar>
@@ -71,17 +86,37 @@ const App: React.FC = () => (
             <Route element={<ProtectedRoute />}>
               <Route
                 path="/"
-                element={hostingOrigin ? <Containers /> : <Home />}
+                element={
+                  usersOrigin ? (
+                    usersPage
+                  ) : hostingOrigin ? (
+                    <Containers />
+                  ) : (
+                    <Home />
+                  )
+                }
               />
               <Route
                 path="/containers"
                 element={
-                  hostingOrigin ? (
+                  hostingOrigin || usersOrigin ? (
                     <Navigate to="/" replace />
                   ) : portalOrigin ? (
                     <HostingRedirect />
                   ) : (
                     <Containers />
+                  )
+                }
+              />
+              <Route
+                path="/users"
+                element={
+                  usersOrigin ? (
+                    <Navigate to="/" replace />
+                  ) : portalOrigin || hostingOrigin ? (
+                    <Navigate to="/" replace />
+                  ) : (
+                    usersPage
                   )
                 }
               />
