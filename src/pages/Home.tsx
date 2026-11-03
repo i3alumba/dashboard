@@ -13,6 +13,7 @@ import StorageIcon from "@mui/icons-material/Storage";
 import BuildIcon from "@mui/icons-material/Build";
 import AnalyticsIcon from "@mui/icons-material/Analytics";
 import DnsIcon from "@mui/icons-material/Dns";
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings";
 import { logout } from "../services/auth";
 import api from "../services/api";
 
@@ -29,6 +30,7 @@ const serviceLabels: Record<string, string> = {
   jenkins: "Jenkins",
   monitor: "Resource Monitor",
   hosting: "Ubuntu Hosting",
+  users: "User administration",
 };
 
 const serviceIcons: Record<string, typeof FolderIcon> = {
@@ -39,6 +41,7 @@ const serviceIcons: Record<string, typeof FolderIcon> = {
   jenkins: BuildIcon,
   monitor: AnalyticsIcon,
   hosting: DnsIcon,
+  users: AdminPanelSettingsIcon,
 };
 
 const Home: React.FC = () => {
