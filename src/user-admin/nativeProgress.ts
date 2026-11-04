@@ -14,6 +14,8 @@ const phases: Record<string, string> = {
 };
 
 export function nativeProgress(native: NativeState): string {
+  if (native.reason === "native_provisioning_deferred")
+    return "External provisioning deferred; central permission only";
   if (
     native.status === "unsupported" &&
     native.reason === "revocation_deferred"

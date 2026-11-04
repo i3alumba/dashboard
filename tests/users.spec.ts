@@ -118,6 +118,7 @@ async function fixture(page: Page, grant: unknown = true) {
             enabled: true,
             actor_id: 1,
             native_execution_enabled: false,
+            native_scheduling_enabled: true,
             native_adapters_accepted: false,
             editable_services: [
               "drive",
@@ -225,6 +226,59 @@ async function fixture(page: Page, grant: unknown = true) {
     });
   return state;
 }
+
+test("central-only stage reports deferred provisioning and hides native resume", async ({
+  page,
+}) => {
+  const state = await fixture(page);
+  state.capOverrides.native_scheduling_enabled = false;
+  state.rows[1].native.gitlab = {
+    desired: "enabled",
+    observed: "unknown",
+    status: "held",
+    reason: "native_provisioning_deferred",
+    management: {
+      can_manage: true,
+      paused: true,
+      authority_epoch: 1,
+      pause_actor_id: 1,
+      safe_for_manual_changes: true,
+    },
+  };
+  await page.goto(origin);
+  await expect(
+    page.getByRole("note", { name: "Central-only administration" }),
+  ).toContainText("no new native work is queued for execution");
+  await expect(
+    page.getByRole("note", { name: "Provisioning-first scope" }),
+  ).toContainText("central permission only");
+  await expect(
+    page.getByText("External provisioning deferred; central permission only", {
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: /resume/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("checkbox", { name: "member: gitlab", exact: true }),
+  ).toBeEnabled();
+  expect(state.calls).toHaveLength(0);
+});
+
+for (const flag of [undefined, null, "false"])
+  test(`missing or malformed native scheduling capability fails closed: ${String(flag)}`, async ({
+    page,
+  }) => {
+    const state = await fixture(page);
+    state.capOverrides.native_scheduling_enabled = flag;
+    await page.goto(origin);
+    await expect(
+      page.getByRole("button", { name: "Retry access" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("table", { name: "User service permission matrix" }),
+    ).toHaveCount(0);
+    expect(state.calls).toHaveLength(0);
+  });
 
 test("Users tile opens standalone matrix with one admin column and read-only Jenkins", async ({
   page,
