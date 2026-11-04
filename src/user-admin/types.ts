@@ -49,6 +49,7 @@ export interface Capabilities {
   enabled: boolean;
   actor_id: number;
   native_execution_enabled: boolean;
+  native_scheduling_enabled: boolean;
   native_adapters_accepted: boolean;
   editable_services: MutableService[];
   readonly_services: ServiceSlug[];
@@ -75,6 +76,7 @@ export function validCapabilities(value: Capabilities): boolean {
     Number.isInteger(value.actor_id) &&
     value.actor_id > 0 &&
     typeof value.native_execution_enabled === "boolean" &&
+    typeof value.native_scheduling_enabled === "boolean" &&
     typeof value.native_adapters_accepted === "boolean" &&
     Array.isArray(value.editable_services) &&
     value.editable_services.every(
