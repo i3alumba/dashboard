@@ -140,6 +140,13 @@ User administration card. Active global administrators are checked by Auth on
 every API call; the page uses same-origin `/api/user-admin/`. The central API
 release switch defaults off. No native worker or credentials are included.
 
+The staged central-only mode requires a typed `native_scheduling_enabled`
+capability from Auth. False shows explicit deferred provisioning, keeps central
+permission editing available and hides native handoff controls. Missing/malformed
+capabilities fail closed rather than claiming that an older backend cannot queue
+native work. Release the matching Auth backend before this Dashboard; neither
+this UI nor the scheduling flag activates a worker or external credentials.
+
 The provisioning-first MVP distinguishes requested access, preparing/bound setup,
 configured accounts with unconfirmed session guarantees, and deferred revocation.
 It explicitly warns that removing access or deactivating denies new Auth sign-ins

@@ -81,6 +81,18 @@ export default function Users() {
         </>
       ) : (
         <>
+          {!users.capabilities.native_scheduling_enabled && (
+            <Alert
+              severity="warning"
+              role="note"
+              aria-label="Central-only administration"
+            >
+              Central Auth users and permissions only. External provisioning is
+              deferred; no new native work is queued for execution. GitLab and
+              Matrix credential issuance is deferred; MinIO automation is
+              safety-blocked. Existing native accounts are not adopted or reset.
+            </Alert>
+          )}
           {(!users.capabilities.native_execution_enabled ||
             !users.capabilities.native_adapters_accepted) && (
             <Alert severity="warning">
@@ -94,11 +106,12 @@ export default function Users() {
             role="note"
             aria-label="Provisioning-first scope"
           >
-            Assigning a service requests account setup, not a successful login
-            guarantee. Removing a grant or deactivating denies new Auth
-            sign-ins; existing external sessions and credentials may continue to
-            work. Immediate MinIO/Matrix revocation is deferred in the
-            provisioning-only MVP.
+            {users.capabilities.native_scheduling_enabled
+              ? "Assigning a service requests account setup, not a successful login guarantee. "
+              : "Assigning a service changes central permission only; external account setup is deferred. "}
+            Removing a grant or deactivating denies new Auth sign-ins; existing
+            external sessions and credentials may continue to work. Immediate
+            MinIO/Matrix revocation is deferred in the provisioning-only MVP.
           </Alert>
           <Alert severity="info" role="note" aria-label="MinIO blocking scope">
             For newly managed MinIO accounts, blocking denies S3 access only.
@@ -224,7 +237,8 @@ export default function Users() {
                                 {nativeProgress(native)}
                               </Typography>
                             )}
-                            {native?.management &&
+                            {users.capabilities?.native_scheduling_enabled &&
+                              native?.management &&
                               (slug === "gitlab" ||
                                 slug === "matrix" ||
                                 slug === "minio") && (
