@@ -44,6 +44,9 @@ export default function Containers() {
     if (result) await panel.refresh(true);
     return result === true;
   };
+  const restart = async (id: string) => {
+    if (await panel.restart(id)) await panel.refresh(true);
+  };
   return (
     <Stack gap={3} sx={{ width: "100%", minWidth: 0 }}>
       <Button
@@ -110,6 +113,7 @@ export default function Containers() {
               }
               action={action}
               check={check}
+              restart={restart}
             />
           ))}
         </>
