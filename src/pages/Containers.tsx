@@ -103,6 +103,7 @@ export default function Containers() {
             <InstanceCard
               key={instance.id}
               instance={instance}
+              capabilities={panel.capabilities!}
               pending={panel.pending}
               externalIngressReady={
                 panel.capabilities?.external_ingress_ready === true

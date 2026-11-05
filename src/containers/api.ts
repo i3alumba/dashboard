@@ -1,5 +1,6 @@
 import axios from "axios";
 import api from "../services/api";
+import { validCpu, validMemory } from "./types";
 import type { Capabilities, Instance, PortCheck, Port } from "./types";
 
 // Absolute same-origin URL overrides the Auth baseURL, retaining its JWT/refresh interceptors.
@@ -26,12 +27,8 @@ export function parseCapabilities(value: unknown): Capabilities {
     !object(value) ||
     value.administrator !== true ||
     value.node !== "gamma" ||
-    !Number.isInteger(value.max_cpu) ||
-    (value.max_cpu as number) < 1 ||
-    (value.max_cpu as number) > 4 ||
-    typeof value.max_memory_gb !== "number" ||
-    value.max_memory_gb <= 0 ||
-    value.max_memory_gb > 16 ||
+    !(value.max_cpu === null || validCpu(value.max_cpu)) ||
+    !(value.max_memory_gb === null || validMemory(value.max_memory_gb)) ||
     typeof value.domain_suffix !== "string" ||
     value.domain_suffix.length > 189 ||
     !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(
@@ -44,7 +41,27 @@ export function parseCapabilities(value: unknown): Capabilities {
     typeof value.external_ingress_ready !== "boolean"
   )
     throw new Error("Invalid capabilities");
-  return value as unknown as Capabilities;
+  const caps = { ...value } as unknown as Capabilities;
+  // Missing or malformed new capabilities must never enable resource/GPU writes.
+  if (
+    !(
+      value.resources_editing_enabled === true &&
+      value.gpu_shared === true &&
+      Array.isArray(value.gpus) &&
+      value.gpus.every(
+        (gpu) =>
+          object(gpu) &&
+          typeof gpu.id === "string" &&
+          /^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/.test(gpu.id) &&
+          typeof gpu.name === "string",
+      ) &&
+      new Set(value.gpus.map((gpu) => gpu.id)).size === value.gpus.length
+    )
+  ) {
+    caps.resources_editing_enabled = false;
+    caps.gpus = undefined;
+  }
+  return caps;
 }
 const uuid = (v: unknown) =>
   typeof v === "string" &&
@@ -75,12 +92,12 @@ export function parseInstance(value: unknown): Instance {
     !["creating", "running", "stopped", "error"].includes(
       value.status as string,
     ) ||
-    !Number.isInteger(value.cpu) ||
-    (value.cpu as number) < 1 ||
-    (value.cpu as number) > 4 ||
-    typeof value.memory_gb !== "number" ||
-    value.memory_gb <= 0 ||
-    value.memory_gb > 16 ||
+    !validCpu(value.cpu) ||
+    !validMemory(value.memory_gb) ||
+    (value.gpu_ids !== undefined &&
+      (!Array.isArray(value.gpu_ids) ||
+        !value.gpu_ids.every((id) => typeof id === "string") ||
+        new Set(value.gpu_ids).size !== value.gpu_ids.length)) ||
     !Array.isArray(value.ports) ||
     !value.ports.every(isPort) ||
     typeof value.created_at !== "string" ||
@@ -124,7 +141,7 @@ export const authorizationFailure = (error: unknown) =>
 export function safeError(error: unknown): string {
   if (axios.isAxiosError(error)) {
     if (error.response?.status === 409)
-      return "Port or resource conflict: the server could not reserve this allocation. Choose another port and check again.";
+      return "Port or resource conflict: the server could not reserve this allocation. Refresh inventory and reopen the resource editor for a fresh revision, or choose another port and check again.";
     if (error.response?.status === 503)
       return "Service or host inspection unavailable. Availability is unknown; retry later.";
     if (error.response?.status === 400 || error.response?.status === 422)
