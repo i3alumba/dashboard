@@ -1199,3 +1199,326 @@ test("malformed GPU capability cannot enable GPU or existing resource writes", a
     page.getByRole("button", { name: "Create container", exact: true }),
   ).toBeEnabled();
 });
+
+async function confirmRestart(page: Page) {
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Restart ubuntu-one?" });
+  await expect(dialog).toContainText("Existing connections will close");
+  await dialog.getByRole("button", { name: "Restart", exact: true }).click();
+}
+
+test("restart confirms intent and uses only existing stop then start endpoints", async ({
+  page,
+}) => {
+  const calls: string[] = [];
+  await setup(page, async (route, path) => {
+    if (path === `${id}/stop` || path === `${id}/start`) {
+      expect(route.request().method()).toBe("POST");
+      calls.push(path);
+      if (path.endsWith("/start"))
+        expect(calls).toEqual([`${id}/stop`, `${id}/start`]);
+      await route.fulfill({
+        json: {
+          ...guest(),
+          status: path.endsWith("/stop") ? "stopped" : "running",
+        },
+      });
+      return true;
+    }
+    if (path.includes("restart"))
+      throw new Error("No backend restart endpoint exists");
+  });
+  await page.goto("/containers");
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  const closingConfirm = await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Restart", exact: true })
+    .elementHandle();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  // A cancelled dialog must not retain an actionable confirmation during exit.
+  await closingConfirm!.evaluate((button) =>
+    (button as HTMLButtonElement).click(),
+  );
+  await closingConfirm!.dispose();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(calls).toEqual([]);
+  await confirmRestart(page);
+  await expect.poll(() => calls).toEqual([`${id}/stop`, `${id}/start`]);
+  await expect(
+    page.getByRole("button", { name: "Restart", exact: true }),
+  ).toBeEnabled();
+});
+
+test("restart holds one mutation reservation through both power requests", async ({
+  page,
+}) => {
+  const calls: string[] = [];
+  let stopDone: (() => void) | undefined;
+  let startDone: (() => void) | undefined;
+  await setup(page, async (route, path) => {
+    if (path === `${id}/stop` || path === `${id}/start`) {
+      calls.push(path);
+      await new Promise<void>((resolve) => {
+        if (path.endsWith("/stop")) stopDone = resolve;
+        else startDone = resolve;
+      });
+      await route.fulfill({
+        json: {
+          ...guest(),
+          status: path.endsWith("/stop") ? "stopped" : "running",
+        },
+      });
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await confirmRestart(page);
+  await expect.poll(() => calls.length).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Restart", exact: true }),
+  ).toBeDisabled();
+  stopDone?.();
+  await expect.poll(() => calls.length).toBe(2);
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Restart", exact: true }),
+  ).toBeDisabled();
+  startDone?.();
+  await expect(
+    page.getByRole("button", { name: "Restart", exact: true }),
+  ).toBeEnabled();
+  expect(calls).toEqual([`${id}/stop`, `${id}/start`]);
+});
+
+for (const failure of [
+  "network",
+  "503",
+  "403",
+  "wrong-state",
+  "wrong-id",
+] as const) {
+  test(`restart never starts after ${failure} stop response`, async ({
+    page,
+  }) => {
+    const calls: string[] = [];
+    await setup(page, async (route, path) => {
+      if (path === `${id}/stop`) {
+        calls.push(path);
+        if (failure === "network") await route.abort();
+        else if (failure === "503" || failure === "403")
+          await route.fulfill({
+            status: Number(failure),
+            json: { detail: "Unconfirmed" },
+          });
+        else
+          await route.fulfill({
+            json: {
+              ...guest(),
+              status: failure === "wrong-state" ? "running" : "stopped",
+              id: failure === "wrong-id" ? portId : id,
+            },
+          });
+        return true;
+      }
+      if (path === `${id}/start`) {
+        calls.push(path);
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await confirmRestart(page);
+    await expect(
+      page.getByRole("alert").filter({
+        hasText:
+          failure === "403"
+            ? "Administrator access revoked"
+            : failure.startsWith("wrong")
+              ? "Invalid server response"
+              : "stop outcome is unconfirmed",
+      }),
+    ).toBeVisible();
+    expect(calls).toEqual([`${id}/stop`]);
+  });
+}
+
+test("failed start is reported as unconfirmed without replaying restart", async ({
+  page,
+}) => {
+  const calls: string[] = [];
+  await setup(page, async (route, path) => {
+    if (path === `${id}/stop`) {
+      calls.push(path);
+      await route.fulfill({ json: { ...guest(), status: "stopped" } });
+      return true;
+    }
+    if (path === `${id}/start`) {
+      calls.push(path);
+      await route.fulfill({ status: 503, json: { detail: "Unknown" } });
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await confirmRestart(page);
+  await expect(
+    page.getByRole("alert").filter({
+      hasText: "Container was stopped, but restart completion is unconfirmed",
+    }),
+  ).toBeVisible();
+  expect(calls).toEqual([`${id}/stop`, `${id}/start`]);
+});
+
+test("authority loss during stop fences the late reply and prevents start", async ({
+  page,
+}) => {
+  let revoked = false;
+  let release: (() => void) | undefined;
+  const calls: string[] = [];
+  await setup(page, async (route, path) => {
+    if (path === "capabilities" && revoked) {
+      await route.fulfill({ status: 403 });
+      return true;
+    }
+    if (path === `${id}/stop`) {
+      calls.push(path);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await route
+        .fulfill({ json: { ...guest(), status: "stopped" } })
+        .catch(() => {});
+      return true;
+    }
+    if (path === `${id}/start`) {
+      calls.push(path);
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await confirmRestart(page);
+  await expect.poll(() => calls.length).toBe(1);
+  revoked = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("article")).toHaveCount(0);
+  release?.();
+  expect(calls).toEqual([`${id}/stop`]);
+});
+
+test("changed browser session after stop does not start automatically", async ({
+  page,
+}) => {
+  let release: (() => void) | undefined;
+  const calls: string[] = [];
+  await setup(page, async (route, path) => {
+    if (path === `${id}/stop`) {
+      calls.push(path);
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await route.fulfill({ json: { ...guest(), status: "stopped" } });
+      return true;
+    }
+    if (path === `${id}/start`) {
+      calls.push(path);
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await confirmRestart(page);
+  await expect.poll(() => calls.length).toBe(1);
+  await page.context().addCookies([
+    {
+      name: "access_token",
+      value: "refreshed-access",
+      url: "http://127.0.0.1:4173",
+    },
+  ]);
+  release?.();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Session changed after stopping" }),
+  ).toBeVisible();
+  expect(calls).toEqual([`${id}/stop`]);
+});
+
+test("restart confirmation cannot act after the container stops during polling", async ({
+  page,
+}) => {
+  let stopped = false;
+  const calls: string[] = [];
+  await setup(page, async (route, path) => {
+    if (path === "" && route.request().method() === "GET") {
+      await route.fulfill({
+        json: {
+          instances: [{ ...guest(), status: stopped ? "stopped" : "running" }],
+        },
+      });
+      return true;
+    }
+    if (path.endsWith("/stop") || path.endsWith("/start")) {
+      calls.push(path);
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  stopped = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Restart", exact: true }),
+  ).toBeDisabled();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  expect(calls).toEqual([]);
+});
+
+test("authority loss closes an unconfirmed restart without power requests", async ({
+  page,
+}) => {
+  let revoked = false;
+  const calls: string[] = [];
+  await setup(page, async (route, path) => {
+    if (path === "capabilities" && revoked) {
+      await route.fulfill({ status: 403 });
+      return true;
+    }
+    if (path.endsWith("/stop") || path.endsWith("/start")) {
+      calls.push(path);
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await page.getByRole("button", { name: "Restart", exact: true }).click();
+  revoked = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("article")).toHaveCount(0);
+  expect(calls).toEqual([]);
+});
+
+for (const status of ["stopped", "creating", "error"] as const) {
+  test(`restart is disabled for ${status} containers`, async ({ page }) => {
+    await setup(page, async (route, path) => {
+      if (path === "" && route.request().method() === "GET") {
+        await route.fulfill({ json: { instances: [{ ...guest(), status }] } });
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await expect(
+      page.getByRole("button", { name: "Restart", exact: true }),
+    ).toBeDisabled();
+  });
+}
