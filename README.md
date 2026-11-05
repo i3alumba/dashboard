@@ -219,6 +219,14 @@ at submit. A disabled Create button lists the invalid constraints instead of
 silently treating a filled but invalid field as complete.
 Only owned port removal is offered, not guest deletion or recreation.
 
+Running containers also offer **Restart** with confirmation that connections will
+close. The UI uses the existing stop then start endpoints under one mutation
+reservation; it starts only after a validated stopped response for that container.
+A failed/unknown stop, revoked access or changed session prevents the start step.
+An interrupted restart may leave the container stopped; refresh inventory before
+another power action. No new backend endpoint or backend-service restart is
+required by this UI change.
+
 SSH suggests `3001 → 22`, within the operator-confirmed **3000–50000** forwarded
 range. Infrastructure and NodePort30000–32767 remain excluded; every new port
 still needs actual host/NAT inspection and atomic server reservation. A suggestion

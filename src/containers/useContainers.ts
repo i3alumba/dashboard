@@ -5,10 +5,21 @@ import {
   containerRequest,
   parseCapabilities,
   parseInventory,
+  parseInstance,
   safeError,
 } from "./api";
 import type { Capabilities, Instance } from "./types";
 import { validSubdomain } from "./types";
+
+class InvalidMutationResponse extends Error {}
+
+function parsedMutation<T>(value: unknown, parse: (value: unknown) => T): T {
+  try {
+    return parse(value);
+  } catch {
+    throw new InvalidMutationResponse();
+  }
+}
 
 export function useContainers(inventory = false) {
   const [capabilities, setCapabilities] = useState<Capabilities | null>(null);
@@ -119,11 +130,12 @@ export function useContainers(inventory = false) {
     };
   }, [clear, refresh]);
 
-  const run = async <T>(
-    path: string,
-    method: string,
-    data: unknown,
-    parse: (value: unknown) => T,
+  const mutate = async <T>(
+    operation: (
+      signal: AbortSignal,
+      current: () => boolean,
+    ) => Promise<T | undefined>,
+    failureMessage?: () => string,
   ): Promise<T | undefined> => {
     if (!getAccessToken()) {
       clear();
@@ -147,25 +159,18 @@ export function useContainers(inventory = false) {
       return true;
     };
     try {
-      const result = await containerRequest(path, signal, method, data);
-      if (!current()) return;
-      let parsed: T;
-      try {
-        parsed = parse(result);
-      } catch {
-        clear();
-        setError("Invalid server response. Access cleared; retry safely.");
-        return;
-      }
-      return parsed;
+      return await operation(signal, current);
     } catch (failure) {
       if (current()) {
-        if (authorizationFailure(failure)) clear();
-        setError(
-          authorizationFailure(failure)
-            ? "Administrator access revoked. No container data is displayed."
-            : safeError(failure),
-        );
+        if (authorizationFailure(failure)) {
+          clear();
+          setError(
+            "Administrator access revoked. No container data is displayed.",
+          );
+        } else if (failure instanceof InvalidMutationResponse) {
+          clear();
+          setError("Invalid server response. Access cleared; retry safely.");
+        } else setError(failureMessage?.() ?? safeError(failure));
       }
     } finally {
       if (current()) {
@@ -174,5 +179,59 @@ export function useContainers(inventory = false) {
       }
     }
   };
-  return { capabilities, instances, error, loading, pending, refresh, run };
+  const run = <T>(
+    path: string,
+    method: string,
+    data: unknown,
+    parse: (value: unknown) => T,
+  ) =>
+    mutate(async (signal, current) => {
+      const result = await containerRequest(path, signal, method, data);
+      if (current()) return parsedMutation(result, parse);
+    });
+
+  // Keep one mutation reservation across both existing power endpoints. Never
+  // start after an unknown stop, authority loss or a changed browser session.
+  const restart = (id: string) => {
+    let stopped = false;
+    return mutate(
+      async (signal, current) => {
+        const token = getAccessToken();
+        const response = await containerRequest(`${id}/stop`, signal, "POST");
+        if (!current()) return;
+        const item = parsedMutation(response, parseInstance);
+        if (item.id !== id || item.status !== "stopped")
+          throw new InvalidMutationResponse();
+        stopped = true;
+        if (getAccessToken() !== token) {
+          clear();
+          setError(
+            "Session changed after stopping. Refresh inventory; restart was not continued.",
+          );
+          return;
+        }
+        const result = await containerRequest(`${id}/start`, signal, "POST");
+        if (!current()) return;
+        const started = parsedMutation(result, parseInstance);
+        if (started.id !== id || started.status !== "running")
+          throw new InvalidMutationResponse();
+        return true;
+      },
+      () =>
+        stopped
+          ? "Container was stopped, but restart completion is unconfirmed. Refresh inventory before another power action."
+          : "Restart was interrupted; stop outcome is unconfirmed. Refresh inventory before another power action.",
+    );
+  };
+
+  return {
+    capabilities,
+    instances,
+    error,
+    loading,
+    pending,
+    refresh,
+    run,
+    restart,
+  };
 }

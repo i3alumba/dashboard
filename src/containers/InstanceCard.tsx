@@ -2,6 +2,11 @@ import { useRef, useState } from "react";
 import {
   Alert,
   Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Paper,
   Stack,
   TextField,
@@ -20,6 +25,7 @@ interface Props {
   externalIngressReady: boolean;
   action: (path: string, method?: string, data?: unknown) => Promise<boolean>;
   check: (port: PortSpec) => Promise<PortCheck | undefined>;
+  restart: (id: string) => Promise<void>;
 }
 export default function InstanceCard({
   instance: item,
@@ -28,6 +34,7 @@ export default function InstanceCard({
   externalIngressReady,
   action,
   check,
+  restart,
 }: Props) {
   const [opening, setOpening] = useState<Instance | null>(null);
   const [passwordValid, setPasswordValid] = useState(false);
@@ -36,6 +43,7 @@ export default function InstanceCard({
     { protocol: "tcp", public_port: 0, target_port: 0 },
   ]);
   const [copyStatus, setCopyStatus] = useState("");
+  const [restartOpen, setRestartOpen] = useState(false);
   const ssh = item.ports.find(
     (port) =>
       port.protocol === "tcp" &&
@@ -121,7 +129,47 @@ export default function InstanceCard({
           >
             Stop
           </Button>
+          <Button
+            disabled={pending || item.status !== "running"}
+            onClick={() => setRestartOpen(true)}
+          >
+            Restart
+          </Button>
         </Stack>
+        <Dialog
+          open={restartOpen}
+          onClose={() => setRestartOpen(false)}
+          aria-labelledby={`restart-${item.id}`}
+        >
+          <DialogTitle
+            id={`restart-${item.id}`}
+            sx={{ overflowWrap: "anywhere" }}
+          >
+            Restart {item.name}?
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              The container will stop and start. Existing connections will
+              close; files and settings are preserved. If interrupted, it may
+              remain stopped. Refresh inventory before retrying an unconfirmed
+              result.
+            </DialogContentText>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setRestartOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!restartOpen || pending || item.status !== "running"}
+              onClick={() => {
+                if (!restartOpen || pending || item.status !== "running")
+                  return;
+                setRestartOpen(false);
+                void restart(item.id);
+              }}
+            >
+              Restart
+            </Button>
+          </DialogActions>
+        </Dialog>
         <Typography variant="subtitle1">Existing ports</Typography>
         {item.ports.length === 0 && (
           <Typography>No published or reserved ports.</Typography>
