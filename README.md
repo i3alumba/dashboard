@@ -203,7 +203,7 @@ clear the panel. Capabilities refresh on focus and every five seconds.
 The migration requires reviewed Host-specific Ingress and Auth's exact Hosting
 CORS/CSRF origin, not wildcard guest origins. Source preparation is not deployment.
 
-The server enforces the live administrator role on every request, CPU/RAM limits,
+The server enforces the live administrator role on every request, advertised CPU/RAM limits,
 a single valid DNS label under `hosting.i3alumba.ru`, and atomic port inspection/reservation.
 The Subdomain input defaults to `mc`, yielding `mc.hosting.i3alumba.ru`.
 Wildcard/exact DNS records must be DNS-only for arbitrary TCP/UDP; this UI does
@@ -230,3 +230,27 @@ Capabilities explicitly declare `external_ingress_ready`. False means upstream
 router/NAT forwarding is not configured: show an operator warning and disable
 public-port creation/addition, while preserving inventory/removal/power controls.
 Free host sockets alone cannot prove that a port is routed from the internet.
+
+### Hosting resources and shared GPUs (prepared contract)
+
+Null `max_cpu`/`max_memory_gb` and null aggregate budgets mean no arbitrary
+per-container or combined 4 CPU / 16 GB ceiling. Numeric legacy per-container
+limits remain respected. RAM accepts positive decimal GB with at most three
+fractional places; CPU is a positive integer. Host capacity is not a reservation.
+The server remains authoritative for aggregate allocation and host availability.
+
+The resource editor requires an explicit enabled backend capability, shared-GPU
+inventory, a safe resource revision, and a running/stopped container. Legacy
+backends keep existing creation behavior but cannot enable resource editing or
+GPU selection. Operators must upgrade/enable the matching backend first.
+GPU choices use only operator-allowlisted PCI IDs, never arbitrary device paths.
+GPUs are shared across containers, without VRAM quotas or exclusive reservation;
+access exposes host drivers. Missing selected GPUs must be explicitly removed,
+never silently discarded.
+
+Edits retain their opening values and resource revision across polling. Conflicts
+require closing, refreshing and reopening the editor. Running RAM decreases or
+GPU changes require explicit restart consent: connections close, while data, full
+root filesystem and /home persist. CPU/RAM increases need no restart. Authority
+loss unmounts drafts and late responses cannot restore them. No release or
+runtime activation is performed by these source changes.

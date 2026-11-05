@@ -836,3 +836,366 @@ test("password-manager input enables a valid creation draft without storing the 
     ),
   ).not.toContain(secret);
 });
+
+const gpu = { id: "0000:01:00.0", name: "Shared accelerator" };
+const resourceCaps = {
+  ...caps,
+  max_cpu: null,
+  max_memory_gb: null,
+  aggregate_budget: { cpu: null, memory_gb: null },
+  resources_editing_enabled: true,
+  gpu_shared: true,
+  gpus: [gpu],
+};
+const resourceGuest = () => ({
+  ...guest(),
+  resource_version: 7,
+  gpu_ids: [] as string[],
+});
+
+test("null resource ceilings allow >4 CPU, >16GB fractional RAM and shared GPU creation", async ({
+  page,
+}) => {
+  let payload: Record<string, unknown> | undefined;
+  await setup(page, async (route, path) => {
+    if (path === "capabilities") {
+      await route.fulfill({ json: resourceCaps });
+      return true;
+    }
+    if (path === "" && route.request().method() === "POST") {
+      payload = route.request().postDataJSON();
+      await route.fulfill({
+        json: { ...resourceGuest(), cpu: 12, memory_gb: 32.125 },
+      });
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await draft(page);
+  await page.getByLabel("CPU cores").fill("12");
+  const memory = page.getByLabel("Memory (GB decimal)");
+  const create = page.getByRole("button", {
+    name: "Create container",
+    exact: true,
+  });
+  await memory.fill("32.1234");
+  await expect(create).toBeDisabled();
+  await memory.fill("32.125");
+  await page.getByRole("checkbox", { name: /Shared accelerator/ }).check();
+  await create.click();
+  expect(payload).toMatchObject({
+    cpu: 12,
+    memory_gb: 32.125,
+    gpu_ids: [gpu.id],
+  });
+  await expect(page.getByLabel("Initial root password")).toHaveValue("");
+});
+
+for (const mode of ["increase", "decrease", "gpu", "remove"] as const) {
+  test(`resource editor ${mode} uses opening revision and explicit restart consent`, async ({
+    page,
+  }) => {
+    let payload: Record<string, unknown> | undefined;
+    let revision = 7;
+    const initial = {
+      ...resourceGuest(),
+      gpu_ids: mode === "remove" ? [gpu.id] : [],
+    };
+    await setup(page, async (route, path) => {
+      if (path === "capabilities") {
+        await route.fulfill({ json: resourceCaps });
+        return true;
+      }
+      if (path === "" && route.request().method() === "GET") {
+        await route.fulfill({
+          json: { instances: [{ ...initial, resource_version: revision }] },
+        });
+        return true;
+      }
+      if (path.endsWith("/resources")) {
+        payload = route.request().postDataJSON();
+        await route.fulfill({ json: { ...initial, resource_version: 9 } });
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await page.getByRole("button", { name: "Edit resources" }).click();
+    const dialog = page.getByRole("dialog");
+    revision = 8;
+    await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await dialog.getByLabel("CPU cores").fill("8");
+    if (mode === "increase")
+      await dialog.getByLabel("Memory (GB decimal)").fill("24.001");
+    if (mode === "decrease")
+      await dialog.getByLabel("Memory (GB decimal)").fill("2.5");
+    if (mode === "gpu")
+      await dialog
+        .getByRole("checkbox", { name: /Shared accelerator/ })
+        .check();
+    if (mode === "remove")
+      await dialog
+        .getByRole("checkbox", { name: /Shared accelerator/ })
+        .uncheck();
+    const save = dialog.getByRole("button", { name: "Save resources" });
+    if (mode !== "increase") {
+      await expect(save).toBeDisabled();
+      await expect(dialog.getByText(/Connections close; data/)).toBeVisible();
+      await dialog
+        .getByRole("checkbox", { name: /explicitly consent/ })
+        .check();
+    }
+    await save.click();
+    await expect(dialog).toHaveCount(0);
+    expect(payload).toMatchObject({
+      cpu: 8,
+      expected_version: 7,
+      allow_restart: mode !== "increase",
+      gpu_ids: mode === "gpu" ? [gpu.id] : [],
+    });
+  });
+}
+
+test("resource conflict cannot blindly retry and authority loss closes the draft", async ({
+  page,
+}) => {
+  let revoked = false;
+  await setup(page, async (route, path) => {
+    if (path === "capabilities") {
+      await route.fulfill(
+        revoked ? { status: 403, json: {} } : { json: resourceCaps },
+      );
+      return true;
+    }
+    if (path === "" && route.request().method() === "GET") {
+      await route.fulfill({ json: { instances: [resourceGuest()] } });
+      return true;
+    }
+    if (path.endsWith("/resources")) {
+      await route.fulfill({ status: 409, json: { detail: secret } });
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await page.getByRole("button", { name: "Edit resources" }).click();
+  await page.getByRole("button", { name: "Save resources" }).click();
+  await expect(
+    page.getByRole("dialog").getByText(/Update not confirmed/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Save resources" }),
+  ).toBeDisabled();
+  expect(await page.locator("body").innerText()).not.toContain(secret);
+  revoked = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("article")).toHaveCount(0);
+});
+
+test("legacy capabilities preserve creation but disable resource editing and GPUs", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/containers");
+  await draft(page);
+  await expect(
+    page.getByRole("button", { name: "Edit resources" }),
+  ).toBeDisabled();
+  await expect(page.getByText(/Ask the operator to upgrade/)).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Create container", exact: true }),
+  ).toBeEnabled();
+});
+
+for (const status of ["creating", "error", "stopped", "running"]) {
+  test(`resource editing fails closed with missing revision in ${status}`, async ({
+    page,
+  }) => {
+    await setup(page, async (route, path) => {
+      if (path === "capabilities") {
+        await route.fulfill({ json: resourceCaps });
+        return true;
+      }
+      if (path === "" && route.request().method() === "GET") {
+        await route.fulfill({
+          json: { instances: [{ ...guest(), gpu_ids: [], status }] },
+        });
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await expect(
+      page.getByRole("button", { name: "Edit resources" }),
+    ).toBeDisabled();
+  });
+}
+
+test("unavailable selected GPU requires explicit removal", async ({ page }) => {
+  await setup(page, async (route, path) => {
+    if (path === "capabilities") {
+      await route.fulfill({ json: resourceCaps });
+      return true;
+    }
+    if (path === "" && route.request().method() === "GET") {
+      await route.fulfill({
+        json: {
+          instances: [
+            {
+              ...resourceGuest(),
+              status: "stopped",
+              gpu_ids: ["0000:02:00.0"],
+            },
+          ],
+        },
+      });
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await page.getByRole("button", { name: "Edit resources" }).click();
+  await expect(
+    page.getByRole("button", { name: "Save resources" }),
+  ).toBeDisabled();
+  await page.getByRole("checkbox", { name: /Unavailable GPU/ }).click();
+  await expect(
+    page.getByRole("button", { name: "Save resources" }),
+  ).toBeEnabled();
+});
+
+for (const value of ["true", "null", "1e309", "0.0001"]) {
+  test(`malformed RAM ${value} never renders inventory`, async ({ page }) => {
+    await setup(page, async (route, path) => {
+      if (path === "" && route.request().method() === "GET") {
+        const body = JSON.stringify({ instances: [resourceGuest()] }).replace(
+          '"memory_gb":4',
+          `"memory_gb":${value}`,
+        );
+        await route.fulfill({ contentType: "application/json", body });
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await expect(page.getByRole("article")).toHaveCount(0);
+    await expect(
+      page.getByText(/Administrator access unavailable/),
+    ).toBeVisible();
+  });
+}
+
+for (const state of ["creating", "error"]) {
+  test(`resource revision does not enable editing in ${state}`, async ({
+    page,
+  }) => {
+    await setup(page, async (route, path) => {
+      if (path === "capabilities") {
+        await route.fulfill({ json: resourceCaps });
+        return true;
+      }
+      if (path === "" && route.request().method() === "GET") {
+        await route.fulfill({
+          json: { instances: [{ ...resourceGuest(), status: state }] },
+        });
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await expect(
+      page.getByRole("button", { name: "Edit resources" }),
+    ).toBeDisabled();
+  });
+}
+
+for (const revision of [-1, 1.5, 9007199254740992, true]) {
+  test(`unsafe resource revision ${revision} fails closed`, async ({
+    page,
+  }) => {
+    await setup(page, async (route, path) => {
+      if (path === "capabilities") {
+        await route.fulfill({ json: resourceCaps });
+        return true;
+      }
+      if (path === "" && route.request().method() === "GET") {
+        await route.fulfill({
+          json: {
+            instances: [{ ...resourceGuest(), resource_version: revision }],
+          },
+        });
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await expect(
+      page.getByRole("button", { name: "Edit resources" }),
+    ).toBeDisabled();
+  });
+}
+
+test("resource mutation is single-flight and late success cannot restore revoked inventory", async ({
+  page,
+}) => {
+  let revoked = false;
+  let release: (() => void) | undefined;
+  let calls = 0;
+  await setup(page, async (route, path) => {
+    if (path === "capabilities") {
+      await route.fulfill(
+        revoked ? { status: 403, json: {} } : { json: resourceCaps },
+      );
+      return true;
+    }
+    if (path === "" && route.request().method() === "GET") {
+      await route.fulfill({ json: { instances: [resourceGuest()] } });
+      return true;
+    }
+    if (path.endsWith("/resources")) {
+      calls++;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      await route.fulfill({ json: resourceGuest() }).catch(() => {});
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await page.getByRole("button", { name: "Edit resources" }).click();
+  await page.getByRole("button", { name: "Save resources" }).click();
+  await expect.poll(() => calls).toBe(1);
+  await expect(
+    page.getByRole("button", { name: "Save resources" }),
+  ).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  revoked = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  release?.();
+  await expect(page.getByRole("article")).toHaveCount(0);
+  expect(calls).toBe(1);
+});
+
+test("malformed GPU capability cannot enable GPU or existing resource writes", async ({
+  page,
+}) => {
+  await setup(page, async (route, path) => {
+    if (path === "capabilities") {
+      await route.fulfill({
+        json: {
+          ...resourceCaps,
+          gpus: [{ id: "/dev/arbitrary", name: "Not allowed" }],
+        },
+      });
+      return true;
+    }
+    if (path === "" && route.request().method() === "GET") {
+      await route.fulfill({ json: { instances: [resourceGuest()] } });
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await draft(page);
+  await expect(
+    page.getByRole("button", { name: "Edit resources" }),
+  ).toBeDisabled();
+  await expect(page.getByRole("checkbox")).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Create container", exact: true }),
+  ).toBeEnabled();
+});

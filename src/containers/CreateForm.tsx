@@ -8,6 +8,8 @@ import type {
   PortSpec,
 } from "./types";
 import { initialPort, validPassword, validPort, validSubdomain } from "./types";
+import { gpuSupported, validResources } from "./types";
+import GpuSelector from "./GpuSelector";
 import PortEditor from "./PortEditor";
 
 interface Props {
@@ -27,6 +29,7 @@ export default function CreateForm({
   const [name, setName] = useState("");
   const [subdomain, setSubdomain] = useState("mc");
   const domain = `${subdomain}.${caps.domain_suffix}`;
+  const [gpuIds, setGpuIds] = useState<string[]>([]);
   const [cpu, setCpu] = useState(1);
   const [memory, setMemory] = useState(1);
   const [ports, setPorts] = useState<PortSpec[]>([initialPort()]);
@@ -52,10 +55,12 @@ export default function CreateForm({
       "Name must start with a lowercase letter and contain only lowercase letters, digits or hyphens (max 32).",
     !validSubdomain(subdomain) &&
       "Subdomain must be one lowercase DNS label, without dots or leading/trailing hyphens.",
-    !(Number.isInteger(cpu) && cpu >= 1 && cpu <= caps.max_cpu) &&
-      `CPU cores must be an integer from 1 to ${caps.max_cpu}.`,
-    !(memory > 0 && memory <= caps.max_memory_gb) &&
-      `Memory must be greater than zero and at most ${caps.max_memory_gb} GB.`,
+    !validResources(cpu, memory, caps) &&
+      `CPU must be a positive integer${caps.max_cpu === null ? "" : ` (maximum ${caps.max_cpu})`}; RAM must be finite, positive, with at most three decimal places${caps.max_memory_gb === null ? "" : ` (maximum ${caps.max_memory_gb} GB)`}.`,
+    gpuIds.length > 0 &&
+      (!gpuSupported(caps) ||
+        gpuIds.some((id) => !caps.gpus?.some((gpu) => gpu.id === id))) &&
+      "Selected GPU unavailable; explicitly remove it before creating.",
     !ports.every(validPort) &&
       "Each port needs a public port from 3000 to 50000 and a guest target from 1 to 65535.",
     duplicate && "Remove duplicate public port/protocol entries.",
@@ -92,10 +97,12 @@ export default function CreateForm({
             domain,
             cpu,
             memory_gb: memory,
+            ...(gpuIds.length ? { gpu_ids: gpuIds } : {}),
             root_password,
             ports,
           })
         ) {
+          setGpuIds([]);
           setName("");
           setCpu(1);
           setMemory(1);
@@ -130,7 +137,9 @@ export default function CreateForm({
           type="number"
           value={cpu}
           disabled={pending}
-          slotProps={{ htmlInput: { min: 1, max: caps.max_cpu, step: 1 } }}
+          slotProps={{
+            htmlInput: { min: 1, max: caps.max_cpu ?? undefined, step: 1 },
+          }}
           onChange={(e) => setCpu(Number(e.target.value))}
         />
         <TextField
@@ -138,11 +147,21 @@ export default function CreateForm({
           type="number"
           value={memory}
           disabled={pending}
-          helperText="1 GB = 1,000,000,000 bytes; maximum 16 GB."
+          helperText="1 GB = 1,000,000,000 bytes; at most three decimal places. Backend limits apply."
           slotProps={{
-            htmlInput: { min: 0.001, max: caps.max_memory_gb, step: "any" },
+            htmlInput: {
+              min: 0.001,
+              max: caps.max_memory_gb ?? undefined,
+              step: "any",
+            },
           }}
           onChange={(e) => setMemory(Number(e.target.value))}
+        />
+        <GpuSelector
+          caps={caps}
+          selected={gpuIds}
+          onChange={setGpuIds}
+          disabled={pending}
         />
         <TextField
           label="Initial root password"

@@ -7,12 +7,15 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import type { Instance, PortCheck, PortSpec } from "./types";
+import ResourceEditor from "./ResourceEditor";
+import { editableResources } from "./types";
+import type { Capabilities, Instance, PortCheck, PortSpec } from "./types";
 import { validPassword, validPort } from "./types";
 import PortEditor from "./PortEditor";
 
 interface Props {
   instance: Instance;
+  capabilities: Capabilities;
   pending: boolean;
   externalIngressReady: boolean;
   action: (path: string, method?: string, data?: unknown) => Promise<boolean>;
@@ -20,11 +23,13 @@ interface Props {
 }
 export default function InstanceCard({
   instance: item,
+  capabilities,
   pending,
   externalIngressReady,
   action,
   check,
 }: Props) {
+  const [opening, setOpening] = useState<Instance | null>(null);
   const [passwordValid, setPasswordValid] = useState(false);
   const password = useRef<HTMLInputElement>(null);
   const [ports, setPorts] = useState<PortSpec[]>([
@@ -78,6 +83,23 @@ export default function InstanceCard({
             <Typography role="status">{copyStatus}</Typography>
           </>
         )}
+        <Button
+          disabled={pending || !editableResources(item, capabilities)}
+          onClick={() => setOpening(item)}
+        >
+          Edit resources
+        </Button>
+        {opening && (
+          <ResourceEditor
+            opening={opening}
+            current={item}
+            caps={capabilities}
+            pending={pending}
+            action={action}
+            close={() => setOpening(null)}
+          />
+        )}
+        <Typography>GPUs: {item.gpu_ids?.join(", ") || "None"}</Typography>
         <Stack direction="row" gap={1}>
           <Button
             disabled={
