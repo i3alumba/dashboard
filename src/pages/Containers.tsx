@@ -44,6 +44,23 @@ export default function Containers() {
     if (result) await panel.refresh(true);
     return result === true;
   };
+  const remove = async (id: string) => {
+    const result = await panel.run(id, "DELETE", undefined, (value) => {
+      if (
+        !value ||
+        typeof value !== "object" ||
+        !("deleted" in value) ||
+        value.deleted !== true ||
+        !("id" in value) ||
+        value.id !== id
+      ) {
+        throw new Error("Invalid deletion response");
+      }
+      return true;
+    });
+    if (result) await panel.refresh(true);
+    return result === true;
+  };
   const restart = async (id: string) => {
     if (await panel.restart(id)) await panel.refresh(true);
   };
@@ -82,7 +99,7 @@ export default function Containers() {
             separate /home are persistent across stop/start, including packages
             and /etc. No disk quota. Warning: the shared SSD can fill up;
             monitor free space and contact the operator before it is full.
-            Containers are never deleted here.
+            Deletion permanently removes the root filesystem and /home.
           </Alert>
           {!panel.capabilities.external_ingress_ready && (
             <Alert severity="warning">
@@ -114,6 +131,7 @@ export default function Containers() {
               action={action}
               check={check}
               restart={restart}
+              remove={remove}
             />
           ))}
         </>

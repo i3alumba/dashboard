@@ -26,6 +26,7 @@ interface Props {
   action: (path: string, method?: string, data?: unknown) => Promise<boolean>;
   check: (port: PortSpec) => Promise<PortCheck | undefined>;
   restart: (id: string) => Promise<void>;
+  remove: (id: string) => Promise<boolean>;
 }
 export default function InstanceCard({
   instance: item,
@@ -35,6 +36,7 @@ export default function InstanceCard({
   action,
   check,
   restart,
+  remove,
 }: Props) {
   const [opening, setOpening] = useState<Instance | null>(null);
   const [passwordValid, setPasswordValid] = useState(false);
@@ -44,6 +46,13 @@ export default function InstanceCard({
   ]);
   const [copyStatus, setCopyStatus] = useState("");
   const [restartOpen, setRestartOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteName, setDeleteName] = useState("");
+  const closeDelete = () => {
+    if (pending) return;
+    setDeleteOpen(false);
+    setDeleteName("");
+  };
   const ssh = item.ports.find(
     (port) =>
       port.protocol === "tcp" &&
@@ -167,6 +176,68 @@ export default function InstanceCard({
               }}
             >
               Restart
+            </Button>
+          </DialogActions>
+        </Dialog>
+        <Button
+          color="error"
+          disabled={pending || item.status === "creating"}
+          onClick={() => {
+            setDeleteName("");
+            setDeleteOpen(true);
+          }}
+        >
+          Delete container
+        </Button>
+        <Dialog
+          open={deleteOpen}
+          onClose={closeDelete}
+          aria-labelledby={`delete-${item.id}`}
+        >
+          <DialogTitle id={`delete-${item.id}`}>
+            Permanently delete {item.name}?
+          </DialogTitle>
+          <DialogContent>
+            <DialogContentText>
+              This permanently deletes the container, its root filesystem and
+              /home, including all files and settings. Connections will close
+              and published ports will be removed. This cannot be undone. Type
+              the container name to confirm.
+            </DialogContentText>
+            <TextField
+              label="Container name to confirm deletion"
+              value={deleteName}
+              onChange={(event) => setDeleteName(event.target.value)}
+              disabled={pending}
+              fullWidth
+              margin="normal"
+              autoComplete="off"
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button disabled={pending} onClick={closeDelete}>
+              Cancel
+            </Button>
+            <Button
+              color="error"
+              disabled={
+                pending ||
+                deleteName !== item.name ||
+                item.status === "creating"
+              }
+              onClick={async () => {
+                if (
+                  pending ||
+                  deleteName !== item.name ||
+                  item.status === "creating"
+                )
+                  return;
+                setDeleteOpen(false);
+                setDeleteName("");
+                await remove(item.id);
+              }}
+            >
+              Permanently delete
             </Button>
           </DialogActions>
         </Dialog>
