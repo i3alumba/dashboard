@@ -217,7 +217,13 @@ Password-manager `input`/focus/blur events synchronize validation booleans witho
 putting plaintext passwords into React state. The current DOM value is rechecked
 at submit. A disabled Create button lists the invalid constraints instead of
 silently treating a filled but invalid field as complete.
-Only owned port removal is offered, not guest deletion or recreation.
+**Delete container** requires confirmation by typing the exact container name.
+Deletion uses the administrator-authorized `DELETE /api/containers/{id}` endpoint
+and permanently removes the root filesystem, separate `/home`, and port mappings.
+It cannot be undone. Creating containers cannot be deleted through the UI.
+A successful `{deleted: true, id}` response refreshes inventory; failed or unknown
+results must be checked using refresh before retrying. This requires the matching
+container-manager backend upgrade; source changes do not deploy it.
 
 Running containers also offer **Restart** with confirmation that connections will
 close. The UI uses the existing stop then start endpoints under one mutation

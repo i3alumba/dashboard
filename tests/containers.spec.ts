@@ -99,6 +99,84 @@ async function setup(
     return route.fulfill({ json: guest() });
   });
 }
+test("container deletion requires exact name, supports cancel and refreshes inventory", async ({
+  page,
+}) => {
+  let deleted = false;
+  let requests = 0;
+  await setup(page, async (route, path) => {
+    if (path === id && route.request().method() === "DELETE") {
+      requests++;
+      deleted = true;
+      await route.fulfill({ json: { deleted: true, id } });
+      return true;
+    }
+    if (path === "" && route.request().method() === "GET") {
+      await route.fulfill({ json: { instances: deleted ? [] : [guest()] } });
+      return true;
+    }
+  });
+  await page.goto("/containers");
+  await page
+    .getByRole("button", { name: "Delete container", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/cannot be undone/)).toBeVisible();
+  await expect(
+    dialog.getByRole("button", { name: "Permanently delete", exact: true }),
+  ).toBeDisabled();
+  await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(requests).toBe(0);
+  await page
+    .getByRole("button", { name: "Delete container", exact: true })
+    .click();
+  await dialog.getByLabel("Container name to confirm deletion").fill("wrong");
+  await expect(
+    dialog.getByRole("button", { name: "Permanently delete", exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByLabel("Container name to confirm deletion")
+    .fill("ubuntu-one");
+  await dialog
+    .getByRole("button", { name: "Permanently delete", exact: true })
+    .click();
+  await expect(page.getByText("No containers.", { exact: true })).toBeVisible();
+  expect(requests).toBe(1);
+});
+
+for (const status of [403, 500]) {
+  test(`deletion failure ${status} never removes a container optimistically`, async ({
+    page,
+  }) => {
+    await setup(page, async (route, path) => {
+      if (path === id && route.request().method() === "DELETE") {
+        await route.fulfill({ status, json: { detail: "operation_failed" } });
+        return true;
+      }
+    });
+    await page.goto("/containers");
+    await page
+      .getByRole("button", { name: "Delete container", exact: true })
+      .click();
+    await page
+      .getByLabel("Container name to confirm deletion")
+      .fill("ubuntu-one");
+    await page
+      .getByRole("button", { name: "Permanently delete", exact: true })
+      .click();
+    await expect(
+      page.getByRole("alert").filter({
+        hasText: status === 403 ? /revoked/ : /failed|error|retry/i,
+      }),
+    ).toBeVisible();
+    if (status === 403) await expect(page.getByRole("article")).toHaveCount(0);
+    else
+      await expect(
+        page.getByRole("article", { name: "Container ubuntu-one" }),
+      ).toBeVisible();
+  });
+}
+
 async function draft(page: Page) {
   await page.getByLabel("Name", { exact: true }).fill("new-ubuntu");
   await page.getByLabel("Initial root password").fill(secret);
@@ -126,7 +204,9 @@ test("hosting entry is a normal service grid tile and backend still protects inv
   await expect(
     page.getByText("Allocation: published. Service: unknown."),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: /delete/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Delete container", exact: true }),
+  ).toBeVisible();
 });
 for (const flag of [false, "true", 1, null]) {
   test(`malformed/nonadmin capability ${JSON.stringify(flag)} denies inventory independently of the portal card`, async ({
