@@ -17,6 +17,7 @@ import { MODE_STORAGE_KEY, createThemeStorageManager } from "./ui/themeStorage";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
+import Vllm from "./pages/Vllm";
 import Home from "./pages/Home";
 import Containers from "./pages/Containers";
 import HostingRedirect from "./pages/HostingRedirect";
@@ -87,7 +88,9 @@ const App: React.FC = () => (
               <Route
                 path="/"
                 element={
-                  usersOrigin ? (
+                  window.location.hostname === "vllm.i3alumba.ru" ? (
+                    <Vllm />
+                  ) : usersOrigin ? (
                     usersPage
                   ) : hostingOrigin ? (
                     <Containers />

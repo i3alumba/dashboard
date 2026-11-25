@@ -1,4 +1,5 @@
 export const serviceLabels = {
+  vllm: "AI chat",
   drive: "Drive",
   matrix: "Matrix",
   gitlab: "GitLab",

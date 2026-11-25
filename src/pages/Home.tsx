@@ -23,6 +23,7 @@ interface Service {
 }
 
 const serviceLabels: Record<string, string> = {
+  vllm: "AI chat",
   drive: "Drive",
   matrix: "Matrix",
   gitlab: "GitLab",
@@ -34,6 +35,7 @@ const serviceLabels: Record<string, string> = {
 };
 
 const serviceIcons: Record<string, typeof FolderIcon> = {
+  vllm: ChatIcon,
   drive: FolderIcon,
   matrix: ChatIcon,
   gitlab: CodeIcon,
