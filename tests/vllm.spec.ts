@@ -1,6 +1,6 @@
 import { test, expect, type Page, type BrowserContext } from "@playwright/test";
 async function openChat(page: Page, context: BrowserContext, sso = false) {
-  const state = { granted: true, bridges: 0, refreshes: 0 };
+  const state = { granted: true, bridges: 0, refreshes: 0, userId: 1 };
   const origin = "https://vllm.i3alumba.ru";
   if (!sso)
     await context.addCookies([
@@ -27,6 +27,7 @@ async function openChat(page: Page, context: BrowserContext, sso = false) {
     let json: object = {
       services: { vllm: { enabled: state.granted, url: origin } },
     };
+    if (path.endsWith("/user/")) json = [{ id: state.userId, is_active: true }];
     if (path.endsWith("/session/"))
       json = { authenticated: true, csrfToken: "fixture-csrf" };
     if (path.endsWith("/session/token/")) {
@@ -49,6 +50,18 @@ async function openChat(page: Page, context: BrowserContext, sso = false) {
     });
   });
   await page.route(origin + "/**", async (route) => {
+    if (new URL(route.request().url()).pathname === "/api/models")
+      return route.fulfill({
+        json: {
+          data: [
+            {
+              id: "qwen3-next",
+              max_model_len: 16384,
+              output_budget: "remaining_context",
+            },
+          ],
+        },
+      });
     if (route.request().url().includes("/api/chat/completions"))
       return route.fulfill({
         contentType: "text/event-stream",
@@ -169,6 +182,8 @@ test("logout immediately removes unsent draft and chat access", async ({
   await expect(
     page.getByRole("button", { name: "Send", exact: true }),
   ).toHaveCount(0);
+  await page.waitForURL("**/login");
+  await page.waitForLoadState("networkidle");
 });
 
 test("standalone SSO uses CSRF bridge and concurrent chat refresh shares rotation", async ({
@@ -636,4 +651,330 @@ test("streaming appends preserve reading position and Jump to latest resumes tok
     page.getByRole("button", { name: "Jump to latest" }),
   ).toHaveCount(0);
   await page.getByRole("button", { name: "Stop", exact: true }).click();
+});
+
+test("verified total context and automatic output budget", async ({
+  page,
+  context,
+}) => {
+  await openChat(page, context);
+  await expect(page.getByText(/16,384 tokens total/)).toBeVisible();
+  await page.route("**/api/chat/completions", (route) => {
+    expect(route.request().postDataJSON()).not.toHaveProperty("max_tokens");
+    return route.fulfill({
+      status: 400,
+      json: { error: { message: "Context exceeded: remaining_tokens=0" } },
+    });
+  });
+  const composer = page.getByLabel("Message", { exact: true });
+  await expect(composer).toHaveAttribute("maxlength", "262144");
+  await composer.fill("large history");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.getByText("Context exceeded: remaining_tokens=0"),
+  ).toBeVisible();
+});
+
+test("escaped composer wire overflow is rejected without inference fetch", async ({
+  page,
+  context,
+}) => {
+  await openChat(page, context);
+  let calls = 0;
+  await page.route("**/api/chat/completions", (route) => {
+    calls++;
+    return route.fulfill({ status: 500 });
+  });
+  await page
+    .getByLabel("Message", { exact: true })
+    .fill("\u0001".repeat(180000));
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.getByText(
+      "Conversation request exceeds 1 MiB. Start a new chat or shorten it.",
+    ),
+  ).toBeVisible();
+  expect(calls).toBe(0);
+});
+
+const usageTitle =
+  "4014/16384. Контекст последнего завершённого запроса: история, шаблон, рассуждения и ответ";
+test("completed server usage includes reasoning, exact tooltip and new chat reset", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await openChat(page, context);
+  await expect(page.getByText("0.0%/16k", { exact: true })).toBeVisible();
+  await page.route("**/api/chat/completions", (route) => {
+    expect(route.request().postDataJSON().stream_options).toEqual({
+      include_usage: true,
+    });
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        'data: {"choices":[{"delta":{"reasoning_content":"thinking"}}],"usage":null}\n\n' +
+        'data: {"choices":[{"delta":{"content":"Final answer"}}],"usage":null}\n\n' +
+        'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n' +
+        'data: {"choices":[],"usage":{"prompt_tokens":3000,"completion_tokens":1014,"total_tokens":4014}}\n\n' +
+        "data: [DONE]\n\n",
+    });
+  });
+  await page.getByLabel("Message", { exact: true }).fill("Hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("log")).toContainText("Final answer");
+  const usage = page.getByLabel(usageTitle, { exact: true });
+  await expect(usage).toHaveText("24.5%/16k");
+  await usage.hover();
+  await expect(page.getByRole("tooltip")).toContainText("4014/16384");
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await expect(usage).toHaveText("24.5%/16k");
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await expect(page.getByText("0.0%/16k", { exact: true })).toBeVisible();
+});
+
+for (const [name, usage] of [
+  ["missing", null],
+  [
+    "boolean",
+    { prompt_tokens: true, completion_tokens: 4013, total_tokens: 4014 },
+  ],
+  [
+    "string",
+    { prompt_tokens: "3000", completion_tokens: 1014, total_tokens: 4014 },
+  ],
+  [
+    "sum mismatch",
+    { prompt_tokens: 3000, completion_tokens: 1, total_tokens: 4014 },
+  ],
+  [
+    "overflow",
+    { prompt_tokens: 16000, completion_tokens: 1000, total_tokens: 17000 },
+  ],
+  [
+    "negative",
+    { prompt_tokens: -1, completion_tokens: 4015, total_tokens: 4014 },
+  ],
+  [
+    "fraction",
+    { prompt_tokens: 3000.5, completion_tokens: 1013.5, total_tokens: 4014 },
+  ],
+] as const) {
+  test(`server usage ${name} stays unknown`, async ({ page, context }) => {
+    await openChat(page, context);
+    await page.route("**/api/chat/completions", (route) =>
+      route.fulfill({
+        contentType: "text/event-stream",
+        body:
+          'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n' +
+          `data: ${JSON.stringify({ choices: [], usage })}\n\n` +
+          "data: [DONE]\n\n",
+      }),
+    );
+    await page.getByLabel("Message", { exact: true }).fill("Hello");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(page.getByRole("log")).toContainText("answer");
+    await expect(page.getByText("—/16k", { exact: true })).toBeVisible();
+  });
+}
+
+test("usage chunk without DONE is never a completed measurement", async ({
+  page,
+  context,
+}) => {
+  await openChat(page, context);
+  await page.route("**/api/chat/completions", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n' +
+        'data: {"choices":[],"usage":{"prompt_tokens":3000,"completion_tokens":1014,"total_tokens":4014}}\n\n',
+    }),
+  );
+  await page.getByLabel("Message", { exact: true }).fill("Hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(
+    page.getByText("Response interrupted before completion"),
+  ).toBeVisible();
+  await expect(page.getByText("—/16k", { exact: true })).toBeVisible();
+});
+
+test("usage request refresh retries identical guarded UTF8 JSON", async ({
+  page,
+  context,
+}) => {
+  await openChat(page, context);
+  const bodies: string[] = [];
+  await page.route("**/api/chat/completions", (route) => {
+    bodies.push(route.request().postData()!);
+    if (bodies.length === 1) return route.fulfill({ status: 401 });
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body:
+        'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n' +
+        'data: {"choices":[],"usage":{"prompt_tokens":3000,"completion_tokens":1014,"total_tokens":4014}}\n\n' +
+        "data: [DONE]\n\n",
+    });
+  });
+  const totals = await page.evaluate(async () => {
+    const path = "/src/vllm/client.ts";
+    const { generate } = await import(path);
+    const totals: number[] = [];
+    await generate(
+      [{ role: "user", content: '雪\\"' }],
+      new AbortController().signal,
+      () => {},
+      () => {},
+      (usage: { total_tokens: number }) => totals.push(usage.total_tokens),
+      16384,
+    );
+    return totals;
+  });
+  await page.waitForLoadState("networkidle");
+  expect(totals).toEqual([4014]);
+  expect(bodies).toHaveLength(2);
+  expect(bodies[0]).toBe(bodies[1]);
+  expect(JSON.parse(bodies[0]).stream_options).toEqual({ include_usage: true });
+});
+
+test("context indicator never advertises unverified model limit", async ({
+  page,
+  context,
+}) => {
+  await openChat(page, context);
+  await page.route("**/api/models", (route) =>
+    route.fulfill({
+      json: { data: [{ id: "qwen3-next", max_model_len: 4096 }] },
+    }),
+  );
+  await Promise.all([page.waitForResponse("**/api/models"), page.reload()]);
+  await expect(page.getByLabel("Message", { exact: true })).toBeEnabled();
+  await expect(page.getByText(/(?:%\/16k|—\/16k)/)).toHaveCount(0);
+});
+
+for (const scenario of [
+  "user switch",
+  "unknown identity",
+  "new chat",
+  "stop",
+] as const) {
+  test(`late completed usage after ${scenario} cannot repopulate counter`, async ({
+    page,
+    context,
+  }) => {
+    await page.clock.install();
+    const state = await openChat(page, context);
+    await page.evaluate(() => {
+      const original = window.fetch;
+      window.fetch = async (input, options) => {
+        if (!String(input).includes("chat/completions"))
+          return original(input, options);
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream({
+            start(stream) {
+              stream.enqueue(
+                encoder.encode(
+                  'data: {"choices":[{"delta":{"content":"old partial"}}]}\n\n',
+                ),
+              );
+              window.addEventListener(
+                "late-usage",
+                () => {
+                  stream.enqueue(
+                    encoder.encode(
+                      'data: {"choices":[],"usage":{"prompt_tokens":3000,"completion_tokens":1014,"total_tokens":4014}}\n\ndata: [DONE]\n\n',
+                    ),
+                  );
+                  stream.close();
+                },
+                { once: true },
+              );
+            },
+          }),
+        );
+      };
+    });
+    await page.getByLabel("Message", { exact: true }).fill("A prompt");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(page.getByRole("log")).toContainText("old partial");
+    if (scenario === "user switch" || scenario === "unknown identity") {
+      state.userId = 2;
+      if (scenario === "unknown identity")
+        await page.route("https://auth.i3alumba.ru/api/user/", (route) =>
+          route.fulfill({ status: 503 }),
+        );
+      await context.addCookies([
+        {
+          name: "access_token",
+          value: "user-B",
+          domain: ".i3alumba.ru",
+          path: "/",
+          secure: true,
+        },
+      ]);
+      await page.clock.runFor(15001);
+      await expect(page.getByRole("log")).toBeEmpty();
+    } else {
+      await page
+        .getByRole("button", {
+          name: scenario === "new chat" ? "New chat" : "Stop",
+          exact: true,
+        })
+        .click();
+    }
+    await page.evaluate(() => window.dispatchEvent(new Event("late-usage")));
+    await expect(page.getByText("24.5%/16k", { exact: true })).toHaveCount(0);
+    if (scenario === "unknown identity")
+      await expect(page.getByLabel("Message", { exact: true })).toBeDisabled();
+    else {
+      await expect(
+        page.getByText(scenario === "new chat" ? "0.0%/16k" : "—/16k", {
+          exact: true,
+        }),
+      ).toBeVisible();
+    }
+    await page.waitForLoadState("networkidle");
+  });
+}
+
+test("nonfinite raw usage counts are ignored", async ({ page, context }) => {
+  await openChat(page, context);
+  await page.route("**/api/chat/completions", (route) =>
+    route.fulfill({
+      contentType: "text/event-stream",
+      body: 'data: {"choices":[{"delta":{"content":"answer"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":1e999,"completion_tokens":1,"total_tokens":1e999}}\n\ndata: [DONE]\n\n',
+    }),
+  );
+  await page.getByLabel("Message", { exact: true }).fill("Hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByRole("log")).toContainText("answer");
+  await expect(page.getByText("—/16k", { exact: true })).toBeVisible();
+});
+
+test("same verified user after access refresh may publish completed usage", async ({
+  page,
+  context,
+}) => {
+  const state = await openChat(page, context);
+  let calls = 0;
+  await page.route("**/api/chat/completions", (route) => {
+    if (++calls === 1) return route.fulfill({ status: 401 });
+    return route.fulfill({
+      contentType: "text/event-stream",
+      body: 'data: {"choices":[{"delta":{"content":"refreshed answer"}}]}\n\ndata: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":3000,"completion_tokens":1014,"total_tokens":4014}}\n\ndata: [DONE]\n\n',
+    });
+  });
+  await page.getByLabel("Message", { exact: true }).fill("Hello");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page.getByText("24.5%/16k", { exact: true })).toBeVisible();
+  await expect(page.getByRole("log")).toContainText("refreshed answer");
+  expect(state.refreshes).toBe(1);
+  await page.waitForLoadState("networkidle");
 });
