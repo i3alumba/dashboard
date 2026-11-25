@@ -10,6 +10,7 @@ const services = [
   "minio",
   "monitor",
   "hosting",
+  "vllm",
   "jenkins",
 ];
 function member(id: number, username: string, admin = false) {
@@ -30,7 +31,7 @@ function member(id: number, username: string, admin = false) {
           assigned: false,
           granted: admin && slug !== "jenkins",
           effective: admin && slug !== "jenkins",
-          readonly: ["jenkins", "hosting"].includes(slug),
+          readonly: ["jenkins", "hosting", "vllm"].includes(slug),
         },
       ]),
     ),
@@ -127,7 +128,7 @@ async function fixture(page: Page, grant: unknown = true) {
               "minio",
               "monitor",
             ],
-            readonly_services: ["jenkins", "hosting"],
+            readonly_services: ["jenkins", "hosting", "vllm"],
             ...state.capOverrides,
           },
         });

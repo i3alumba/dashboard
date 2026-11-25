@@ -26,7 +26,7 @@ api.interceptors.request.use((config) => {
 
 // Share one refresh across concurrent requests: rotated refresh tokens are single-use.
 let pendingRefresh: Promise<string> | null = null;
-function refreshAccessToken(): Promise<string> {
+export function refreshAccessToken(): Promise<string> {
   if (!pendingRefresh) {
     pendingRefresh = (async () => {
       const refresh = getRefreshToken();

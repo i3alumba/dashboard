@@ -268,3 +268,10 @@ GPU changes require explicit restart consent: connections close, while data, ful
 root filesystem and /home persist. CPU/RAM increases need no restart. Authority
 loss unmounts drafts and late responses cannot restore them. No release or
 runtime activation is performed by these source changes.
+
+## vllm chat
+
+The same bundle serves `vllm.i3alumba.ru`. Chat uses memory only, plaintext output,
+Send/Stop and the shared rotating JWT refresh coordinator. Access is checked by
+Auth and enforced independently on every gateway request. Domain-wide JavaScript
+JWT cookies are reused; this does not provide host-isolated credential storage.
