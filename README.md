@@ -275,3 +275,21 @@ The same bundle serves `vllm.i3alumba.ru`. Chat uses memory only, plaintext outp
 Send/Stop and the shared rotating JWT refresh coordinator. Access is checked by
 Auth and enforced independently on every gateway request. Domain-wide JavaScript
 JWT cookies are reused; this does not provide host-isolated credential storage.
+
+### Rich AI chat workspace
+
+The VLLM origin uses a single, memory-only conversation, with a persistent
+composer and no sidebar/history. Enter sends; Shift+Enter inserts a newline.
+Stop keeps incomplete output out of future context. New chat cancels the active
+request and clears the conversation without changing access eligibility.
+
+Assistant replies support Markdown/GFM tables, fenced code with literal copy,
+and inline/display math. `react-markdown`, `remark-gfm`, `remark-math`,
+`rehype-katex`, and bundled `katex` styles are loaded only with the lazy chat
+page. HTML stays inert, Markdown images do not load, and KaTeX trust is disabled.
+Syntax highlighting is deliberately deferred. User messages remain plain text.
+Messages and drafts are not persisted. Copy actions report success or failure.
+
+Tests use mocked services only; screenshots are written under
+`/tmp/vllm-rich-chat-ui/`. Viewport/zoom tests are not validation of a real mobile
+keyboard. This branch prepares frontend source only, not a production release.
