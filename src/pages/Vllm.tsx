@@ -6,12 +6,21 @@ import {
   useState,
 } from "react";
 import { Alert, Button, Stack, TextField, Typography } from "@mui/material";
+import ContextUsage from "../vllm/ContextUsage";
 import ThemeToggle from "../components/ThemeToggle";
 import MarkdownMessage, { CopyButton } from "../vllm/MarkdownMessage";
+import { getAccessToken } from "../utils/cookies";
 import api from "../services/api";
 import { logout } from "../services/auth";
-import { ChatAccessError, generate, type Message } from "../vllm/client";
+import {
+  ChatAccessError,
+  generate,
+  verifiedContext,
+  type Message,
+} from "../vllm/client";
 export default function Vllm() {
+  const [contextVerified, setContextVerified] = useState<number | null>(null);
+  const [usedContext, setUsedContext] = useState<number | null>(0);
   const [signedOut, setSignedOut] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -28,6 +37,11 @@ export default function Vllm() {
     if (follow.current && scroll.current)
       scroll.current.scrollTop = scroll.current.scrollHeight;
   }, [messages, thinking, latest]);
+  const identity = useRef<{
+    token: string | null;
+    id: number | null;
+    generation: number;
+  }>({ token: null, id: null, generation: 0 });
   const current = useRef<AbortController | null>(null);
   const stop = useCallback(() => {
     current.current?.abort();
@@ -36,30 +50,82 @@ export default function Vllm() {
     setThinking(false);
   }, []);
   const loseAccess = useCallback(() => {
+    identity.current = {
+      token: null,
+      id: null,
+      generation: identity.current.generation + 1,
+    };
+    setUsedContext(null);
     setAllowed(false);
     stop();
     setInput("");
     setMessages([]);
     setError("");
   }, [stop]);
+  const verifyIdentity = useCallback(async () => {
+    const token = getAccessToken();
+    if (
+      token &&
+      identity.current.token === token &&
+      identity.current.id !== null
+    )
+      return { ...identity.current };
+    if (identity.current.id !== null) setUsedContext(null);
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const response = await api.get("user/");
+        const currentToken = getAccessToken();
+        if (
+          !currentToken ||
+          response.config.headers.Authorization !== `Bearer ${currentToken}`
+        )
+          continue;
+        const users = response.data;
+        if (
+          !Array.isArray(users) ||
+          users.length !== 1 ||
+          !Number.isSafeInteger(users[0]?.id) ||
+          users[0].id <= 0 ||
+          users[0].is_active !== true
+        )
+          throw new Error("Unverified chat identity");
+        const id = users[0].id as number;
+        if (identity.current.id !== null && identity.current.id !== id)
+          loseAccess();
+        identity.current = {
+          token: currentToken,
+          id,
+          generation: identity.current.generation,
+        };
+        return { ...identity.current };
+      }
+    } catch {
+      /* Unverifiable identity must fence pending streams. */
+    }
+    loseAccess();
+    return null;
+  }, [loseAccess]);
   useEffect(() => {
     let active = true;
-    const check = () =>
-      api
-        .get("access/")
-        .then(({ data }) => {
-          if (!active) return;
-          const granted = data.services?.vllm?.enabled === true;
-          setAllowed(granted);
-          if (!granted) {
-            loseAccess();
-          }
-        })
-        .catch(() => {
-          if (active) {
-            loseAccess();
-          }
-        });
+    const check = async () => {
+      try {
+        const access = await api.get("access/");
+        const data = access.data;
+        if (!active) return;
+        const verified = await verifyIdentity();
+        if (
+          !active ||
+          !verified ||
+          access.config.headers.Authorization !== `Bearer ${getAccessToken()}`
+        )
+          return;
+        const granted = data.services?.vllm?.enabled === true;
+        setAllowed(granted);
+        if (!granted) loseAccess();
+      } catch {
+        if (active) loseAccess();
+      }
+    };
     void check();
     const timer = setInterval(() => void check(), 15000);
     return () => {
@@ -67,19 +133,33 @@ export default function Vllm() {
       clearInterval(timer);
       current.current?.abort();
     };
-  }, [loseAccess]);
+  }, [loseAccess, verifyIdentity]);
+  useEffect(() => {
+    setContextVerified(null);
+    if (!allowed) return;
+    const controller = new AbortController();
+    void verifiedContext(controller.signal)
+      .then((verified) => {
+        if (!controller.signal.aborted) setContextVerified(verified);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [allowed]);
   const send = async () => {
     if (!allowed || busy || !input.trim()) return;
     answered.current = false;
     follow.current = true;
     const controller = new AbortController();
     current.current = controller;
+    const requestIdentity = await verifyIdentity();
+    if (!requestIdentity || current.current !== controller) return;
     const next: Message[] = [
       ...messages.filter((message) => message.complete !== false),
       { role: "user", content: input },
     ];
     setMessages([...next, { role: "assistant", content: "", complete: false }]);
     setInput("");
+    setUsedContext(null);
     setBusy(true);
     setError("");
     try {
@@ -102,6 +182,17 @@ export default function Vllm() {
           if (current.current === controller && !answered.current)
             setThinking(true);
         },
+        async (usage) => {
+          const verified = await verifyIdentity();
+          if (
+            verified &&
+            current.current === controller &&
+            verified.generation === requestIdentity.generation &&
+            verified.id === requestIdentity.id
+          )
+            setUsedContext(usage.total_tokens);
+        },
+        contextVerified,
       );
       if (current.current === controller)
         setMessages((old) =>
@@ -141,6 +232,7 @@ export default function Vllm() {
             onClick={() => {
               stop();
               setMessages([]);
+              setUsedContext(0);
               setInput("");
               setError("");
               follow.current = true;
@@ -265,6 +357,13 @@ export default function Vllm() {
           </Button>
         )}
         <div className="composer-box">
+          <ContextUsage used={usedContext} limit={contextVerified} />
+          {contextVerified !== null && (
+            <Typography variant="caption">
+              16,384 tokens total: conversation, formatting, reasoning and
+              answer. Output uses remaining context and is time-bounded.
+            </Typography>
+          )}
           <TextField
             label="Message"
             InputLabelProps={{ shrink: true }}
@@ -277,7 +376,7 @@ export default function Vllm() {
             value={input}
             disabled={!allowed || busy}
             onChange={(event) => setInput(event.target.value)}
-            inputProps={{ maxLength: 16000 }}
+            inputProps={{ maxLength: 262144 }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229)
                 return;

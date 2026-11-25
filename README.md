@@ -293,3 +293,18 @@ Messages and drafts are not persisted. Copy actions report success or failure.
 Tests use mocked services only; screenshots are written under
 `/tmp/vllm-rich-chat-ui/`. Viewport/zoom tests are not validation of a real mobile
 keyboard. This branch prepares frontend source only, not a production release.
+
+### Chat context counter
+
+The compact accessible `ContextUsage` component reports completed-request server
+usage, e.g. `24.5%/16k`; its tooltip shows exact tokens and explains that history,
+formatting, reasoning and answer share the context. It appears only after verified
+model metadata. New chat is zero; missing/invalid usage, errors and interrupted
+requests are unknown (`—/16k`). Draft text is never used to estimate tokens.
+
+Usage publication is fenced by the verified current user's ID and an in-memory
+session generation. The existing Auth `user/` API is checked when the access token
+changes and before usage publication; unchanged verified tokens reuse the cached
+identity. Same-user refresh retries remain valid. Different/unverifiable identity
+invalidates old streams and clears conversation, draft and usage. Late profile
+responses are never cached against a different current token.
